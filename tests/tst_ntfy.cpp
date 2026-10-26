@@ -20,6 +20,7 @@ class FakeNtfyServer : public QTcpServer
 public:
     struct Response {
         int status = 200;
+        QByteArray headers; // extra header lines, each ending in \r\n
         QList<QByteArray> chunks;
         bool closeAfter = true;
     };
@@ -54,6 +55,7 @@ protected:
             const Response response = responses.isEmpty() ? Response() : responses.takeFirst();
             socket->write("HTTP/1.1 " + QByteArray::number(response.status) + " X\r\n"
                           "Content-Type: application/x-ndjson\r\n"
+                          + response.headers +
                           "Connection: close\r\n\r\n");
             for (int i = 0; i < response.chunks.size(); ++i) {
                 const QByteArray chunk = response.chunks.at(i);
@@ -95,6 +97,8 @@ private slots:
     void streamReassemblesLinesAndResumes();
     void streamStopsOnAccessDenied();
     void streamKeepaliveTimeoutReconnects();
+    void streamRefusesRedirects();
+    void pollRefusesRedirects();
     void pollCollectsMessages();
     void pollReportsServerError();
 };
@@ -421,6 +425,67 @@ void TestNtfy::streamKeepaliveTimeoutReconnects()
     QTRY_COMPARE_WITH_TIMEOUT(fake.requestLines.size(), 2, 5000);
     QVERIFY(waitedToReconnect);
     stream.stop();
+}
+
+void TestNtfy::streamRefusesRedirects()
+{
+    FakeNtfyServer elsewhere;
+    QVERIFY(elsewhere.listen(QHostAddress::LocalHost));
+    FakeNtfyServer fake;
+    QVERIFY(fake.listen(QHostAddress::LocalHost));
+    FakeNtfyServer::Response redirect;
+    redirect.status = 302;
+    redirect.headers = "Location: " + elsewhere.url().toEncoded() + "/t/json\r\n";
+    fake.responses << redirect;
+
+    QNetworkAccessManager nam;
+    NtfyStream stream(&nam);
+    NtfyServerConfig server;
+    server.baseUrl = fake.url();
+    server.token = QStringLiteral("tk_secret");
+    stream.setServer(server);
+    stream.setTopics(QStringList{QStringLiteral("t")});
+
+    QSignalSpy refused(&stream, &NtfyStream::redirectRefused);
+    QSignalSpy errors(&stream, &NtfyStream::errorOccurred);
+    stream.start();
+
+    QTRY_COMPARE_WITH_TIMEOUT(refused.count(), 1, 5000);
+    QCOMPARE(refused.at(0).at(0).toUrl(), QUrl(elsewhere.url().toString() + QStringLiteral("/t/json")));
+    QVERIFY(errors.at(0).at(0).toString().startsWith(QStringLiteral("HTTP 302: server redirects to")));
+    QCOMPARE(stream.state(), NtfyStream::Disconnected);
+
+    QTest::qWait(1500); // would have reconnected after 1s if it retried
+    QCOMPARE(fake.requestLines.size(), 1);
+    QVERIFY(elsewhere.requestLines.isEmpty()); // the token never left for the other server
+}
+
+void TestNtfy::pollRefusesRedirects()
+{
+    FakeNtfyServer elsewhere;
+    QVERIFY(elsewhere.listen(QHostAddress::LocalHost));
+    FakeNtfyServer fake;
+    QVERIFY(fake.listen(QHostAddress::LocalHost));
+    FakeNtfyServer::Response redirect;
+    redirect.status = 307;
+    redirect.headers = "Location: " + elsewhere.url().toEncoded() + "/t/json?poll=1\r\n";
+    fake.responses << redirect;
+
+    QNetworkAccessManager nam;
+    NtfyPoller poller(&nam);
+    NtfyServerConfig server;
+    server.baseUrl = fake.url();
+    server.token = QStringLiteral("tk_secret");
+    poller.setServer(server);
+
+    QSignalSpy finished(&poller, &NtfyPoller::finished);
+    poller.poll(QStringList{QStringLiteral("t")}, QString());
+
+    QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 5000);
+    QVERIFY(!finished.at(0).at(0).toBool());
+    QVERIFY(finished.at(0).at(2).toString().startsWith(QStringLiteral("HTTP 307: server redirects to")));
+    QTest::qWait(200);
+    QVERIFY(elsewhere.requestLines.isEmpty());
 }
 
 void TestNtfy::pollCollectsMessages()

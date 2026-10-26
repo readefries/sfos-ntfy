@@ -147,8 +147,16 @@ void NtfyStream::onFinished()
     const QByteArray body = (isSuccess(status) || !reply->isOpen()) ? QByteArray() : reply->readAll();
     const bool failed = reply->error() != QNetworkReply::NoError || !isSuccess(status);
     const QString error = failed ? ntfyErrorString(reply, body) : QString();
+    const QUrl redirectTarget = ntfyRedirectTarget(reply);
     teardownReply();
     m_keepaliveTimer.stop();
+
+    if (status >= 300 && status < 400) {
+        emit errorOccurred(error);
+        emit redirectRefused(redirectTarget);
+        setState(Disconnected);
+        return;
+    }
 
     if (status == 401 || status == 403) {
         emit errorOccurred(error);

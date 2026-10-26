@@ -30,4 +30,7 @@ struct NtfyServerConfig
 // Human readable error for a failed request, using ntfy's JSON error body when present.
 QString ntfyErrorString(QNetworkReply *reply, const QByteArray &body);
 
+// Where a 3xx reply points to (resolved against the request URL), or an empty URL.
+QUrl ntfyRedirectTarget(QNetworkReply *reply);
+
 #endif // NTFYSERVER_H

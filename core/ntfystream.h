@@ -61,6 +61,8 @@ signals:
     void errorOccurred(const QString &error);
     // The server rejected our credentials or topic access; we won't retry on our own.
     void accessDenied(int httpStatus);
+    // The server answered with a redirect, which we never follow; we won't retry on our own.
+    void redirectRefused(const QUrl &target);
 
 private:
     void connectStream();

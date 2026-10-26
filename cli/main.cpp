@@ -153,6 +153,9 @@ int main(int argc, char *argv[])
     QObject::connect(stream, &NtfyStream::errorOccurred, [](const QString &error) {
         err() << "warning: " << error << endl;
     });
+    QObject::connect(stream, &NtfyStream::redirectRefused, []() {
+        QCoreApplication::exit(2);
+    });
     QObject::connect(stream, &NtfyStream::accessDenied, [](int status) {
         err() << "access denied (HTTP " << status << "), check your credentials" << endl;
         QCoreApplication::exit(2);

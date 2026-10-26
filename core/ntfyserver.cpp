@@ -40,7 +40,9 @@ QByteArray NtfyServerConfig::authorizationHeader() const
 QNetworkRequest NtfyServerConfig::request(const QUrl &url) const
 {
     QNetworkRequest request(url);
-    request.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
+    // Never follow redirects: Qt re-sends our Authorization header to wherever the server points,
+    // including other hosts. ntfy servers don't redirect, so a redirect means a wrong server URL.
+    request.setAttribute(QNetworkRequest::FollowRedirectsAttribute, false);
     request.setRawHeader("User-Agent", "harbour-ntfy/" NTFY_VERSION " (Sailfish OS)");
 
     const QByteArray auth = authorizationHeader();
@@ -56,10 +58,30 @@ QString ntfyErrorString(QNetworkReply *reply, const QByteArray &body)
     const QString serverError = QJsonDocument::fromJson(body).object()
             .value(QLatin1String("error")).toString();
 
+    if (status >= 300 && status < 400) {
+        const QUrl target = ntfyRedirectTarget(reply);
+        return QStringLiteral("HTTP %1: server redirects to %2; redirects are not followed, "
+                              "update the server URL instead")
+                .arg(status)
+                .arg(target.isEmpty() ? QStringLiteral("an unknown location")
+                                      : target.toString(QUrl::RemoveUserInfo | QUrl::RemoveQuery));
+    }
     if (status >= 300) {
         return serverError.isEmpty()
                 ? QStringLiteral("HTTP %1").arg(status)
                 : QStringLiteral("HTTP %1: %2").arg(status).arg(serverError);
     }
     return reply->errorString();
+}
+
+QUrl ntfyRedirectTarget(QNetworkReply *reply)
+{
+    const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    if (status < 300 || status >= 400)
+        return QUrl();
+
+    const QByteArray location = reply->rawHeader("Location");
+    if (location.isEmpty())
+        return QUrl();
+    return reply->url().resolved(QUrl::fromEncoded(location));
 }
