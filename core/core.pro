@@ -6,6 +6,7 @@ CONFIG += staticlib
 QT = core network
 
 HEADERS += \
+    ntfycredentials.h \
     ntfymessage.h \
     ntfynotificationcontent.h \
     ntfyserver.h \
@@ -13,6 +14,7 @@ HEADERS += \
     ntfypoller.h
 
 SOURCES += \
+    ntfycredentials.cpp \
     ntfymessage.cpp \
     ntfynotificationcontent.cpp \
     ntfyserver.cpp \

@@ -10,6 +10,13 @@ packagesExist(nemonotifications-qt5) {
     notify.depends = core
     cli.depends += notify
 }
+packagesExist(sailfishsecrets) {
+    SUBDIRS += secrets
+    secrets.depends = core
+    SUBDIRS += secretscheck
+    secretscheck.subdir = tools/secrets-check
+    secretscheck.depends = core secrets
+}
 
 OTHER_FILES += rpm/harbour-ntfy.spec README.md
 

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+#include "ntfycredentials.h"
 #include "ntfymessage.h"
 #include "ntfynotificationcontent.h"
 #include "ntfypoller.h"
@@ -93,6 +94,9 @@ private slots:
     void subscribeUrl_data();
     void subscribeUrl();
     void authorization();
+    void credentialKey();
+    void credentialRoundTrip();
+    void memoryCredentialStore();
 
     void streamReassemblesLinesAndResumes();
     void streamStopsOnAccessDenied();
@@ -320,6 +324,59 @@ void TestNtfy::authorization()
     QCOMPARE(server.authorizationHeader(), QByteArray("Bearer tk_AgQdq7mVBoFD37zQVN29RhuMzNIz2"));
     QCOMPARE(server.request(QUrl(QStringLiteral("https://ntfy.sh"))).rawHeader("Authorization"),
              server.authorizationHeader());
+}
+
+void TestNtfy::credentialKey()
+{
+    const QString key = ntfyCredentialKey(QUrl(QStringLiteral("https://ntfy.sh")));
+    QCOMPARE(key.size(), 6 + 64); // "server" + hex sha256
+    QVERIFY(!key.contains(QStringLiteral("ntfy"))); // doesn't reveal the server
+    QCOMPARE(ntfyCredentialKey(QUrl(QStringLiteral("https://NTFY.sh/"))), key);
+    QCOMPARE(ntfyCredentialKey(QUrl(QStringLiteral("https://user:pw@ntfy.sh"))), key);
+    QVERIFY(ntfyCredentialKey(QUrl(QStringLiteral("http://ntfy.sh"))) != key);
+    QVERIFY(ntfyCredentialKey(QUrl(QStringLiteral("https://ntfy.sh:8443"))) != key);
+    QVERIFY(ntfyCredentialKey(QUrl(QStringLiteral("https://example.com/ntfy"))) != key);
+}
+
+void TestNtfy::credentialRoundTrip()
+{
+    NtfyServerConfig withToken;
+    withToken.token = QStringLiteral("tk_abc");
+    NtfyServerConfig decoded;
+    decoded.username = QStringLiteral("stale");
+    QVERIFY(ntfyDecodeCredentials(ntfyEncodeCredentials(withToken), &decoded));
+    QCOMPARE(decoded.token, QStringLiteral("tk_abc"));
+    QVERIFY(decoded.username.isEmpty());
+
+    NtfyServerConfig withPassword;
+    withPassword.username = QStringLiteral("phil");
+    withPassword.password = QString::fromUtf8("p@ss:wörd");
+    QVERIFY(ntfyDecodeCredentials(ntfyEncodeCredentials(withPassword), &decoded));
+    QVERIFY(decoded.token.isEmpty());
+    QCOMPARE(decoded.username, QStringLiteral("phil"));
+    QCOMPARE(decoded.password, QString::fromUtf8("p@ss:wörd"));
+
+    QVERIFY(!ntfyDecodeCredentials("garbage", &decoded));
+}
+
+void TestNtfy::memoryCredentialStore()
+{
+    NtfyMemoryCredentialStore store;
+    QByteArray secret;
+    bool found = true;
+    QVERIFY(store.load(QStringLiteral("k"), &secret, &found));
+    QVERIFY(!found);
+
+    QVERIFY(store.store(QStringLiteral("k"), "one"));
+    QVERIFY(store.store(QStringLiteral("k"), "two"));
+    QVERIFY(store.load(QStringLiteral("k"), &secret, &found));
+    QVERIFY(found);
+    QCOMPARE(secret, QByteArray("two"));
+
+    QVERIFY(store.remove(QStringLiteral("k")));
+    QVERIFY(store.remove(QStringLiteral("k")));
+    QVERIFY(store.load(QStringLiteral("k"), &secret, &found));
+    QVERIFY(!found);
 }
 
 void TestNtfy::streamReassemblesLinesAndResumes()

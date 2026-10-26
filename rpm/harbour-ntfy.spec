@@ -11,6 +11,8 @@ BuildRequires:  pkgconfig(Qt5Network)
 BuildRequires:  pkgconfig(Qt5Test)
 BuildRequires:  pkgconfig(Qt5DBus)
 BuildRequires:  pkgconfig(nemonotifications-qt5)
+BuildRequires:  pkgconfig(sailfishsecrets)
+Requires:       sailfishsecretsdaemon-secretsplugins-default
 
 %description
 Native ntfy (https://ntfy.sh) push notification client for Sailfish OS.
