@@ -1,0 +1,11 @@
+*.o
+*.a
+moc_*
+*.moc
+Makefile*
+*.pro.user*
+.qmake.stash
+/build*/
+/RPMS/
+/cli/harbour-ntfy-cli
+/tests/tst_ntfy

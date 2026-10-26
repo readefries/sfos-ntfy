@@ -1,0 +1,41 @@
+name: Build and test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  SFOS_RELEASE: 5.1.0.11
+
+jobs:
+  build:
+    name: SailfishOS ${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [aarch64, armv7hl, i486]
+    steps:
+      - uses: actions/checkout@v4
+
+      # The SDK image runs as mersdk (uid 100000), so build from a copy inside the
+      # container instead of the runner-owned checkout. %check runs the Qt tests.
+      - name: Build RPM and run tests
+        run: |
+          mkdir -p RPMS && chmod 777 RPMS
+          docker run --rm \
+            -v "$PWD":/source:ro \
+            -v "$PWD/RPMS":/output \
+            coderus/sailfishos-platform-sdk-${{ matrix.arch }}:${SFOS_RELEASE} \
+            bash -euc "
+              cp -r /source ~/src && mkdir ~/build && cd ~/build
+              mb2 -t SailfishOS-${SFOS_RELEASE}-${{ matrix.arch }} build ~/src
+              cp RPMS/*.rpm /output/
+            "
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: harbour-ntfy-${{ matrix.arch }}
+          path: RPMS/*.rpm
+          if-no-files-found: error
