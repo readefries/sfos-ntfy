@@ -8,6 +8,7 @@ Native [ntfy](https://ntfy.sh) client for Sailfish OS. Work in progress.
 |---------|------|
 | `core/` | Static library: message parsing, server config/auth, `NtfyStream` (long-lived JSON stream with keepalive watchdog, backoff and `since=` resume) and `NtfyPoller` (one-shot `poll=1` catch-up). Qt Core/Network only, so it can be shared by the app and a future daemon. |
 | `service/`| Everything behind the UI: SQLite storage (servers, subscriptions, history; never credentials) and `NtfySubscriptionManager`, which runs one stream per server and resumes after restarts. |
+| `daemon/`| `harbour-ntfy-daemon`: systemd user service (started with the session, or by D-Bus activation) that owns credentials, storage, connections and notifications, and serves the UI on the session bus as `nl.readefries.harbourntfy`. |
 | `cli/`  | `harbour-ntfy-cli`, a command line spike to try the core on desktop or on the phone over SSH. |
 | `notify/`| Sailfish only: posts messages as system notifications (nemo-qml-plugin-notifications). |
 | `secrets/`| Sailfish only: credential store on Sailfish Secrets (device-lock encrypted collection). |

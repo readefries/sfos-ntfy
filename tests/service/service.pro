@@ -6,7 +6,7 @@ TEMPLATE = app
 TARGET = tst_service
 CONFIG += testcase no_testcase_installs console
 CONFIG -= app_bundle
-QT = core network sql testlib
+QT = core network sql dbus testlib
 
 INCLUDEPATH += ../common
 HEADERS += ../common/fakentfyserver.h

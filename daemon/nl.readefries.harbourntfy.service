@@ -1,0 +1,4 @@
+[D-BUS Service]
+Name=nl.readefries.harbourntfy
+Exec=/usr/bin/harbour-ntfy-daemon
+SystemdService=harbour-ntfy-daemon.service

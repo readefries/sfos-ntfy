@@ -19,6 +19,11 @@ packagesExist(sailfishsecrets) {
     secretscheck.depends = core secrets
 }
 
+packagesExist(nemonotifications-qt5):packagesExist(sailfishsecrets) {
+    SUBDIRS += daemon
+    daemon.depends = core service notify secrets
+}
+
 OTHER_FILES += rpm/harbour-ntfy.spec README.md
 
 license.files = LICENSE

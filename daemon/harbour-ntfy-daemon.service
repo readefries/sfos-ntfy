@@ -1,0 +1,15 @@
+[Unit]
+Description=ntfy push notification client
+After=post-user-session.target
+
+[Service]
+Type=dbus
+BusName=nl.readefries.harbourntfy
+# Must never change: Sailfish Secrets identifies the owner of our credentials by command line.
+ExecStart=/usr/bin/harbour-ntfy-daemon
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=true
+
+[Install]
+WantedBy=post-user-session.target

@@ -126,7 +126,8 @@ int main(int argc, char *argv[])
         QObject::connect(poller, &NtfyPoller::messageReceived, &printMessage);
 #ifdef NTFY_HAVE_NOTIFY
         if (notifier)
-            QObject::connect(poller, &NtfyPoller::messageReceived, notifier, &NtfyNotifier::notify);
+            QObject::connect(poller, &NtfyPoller::messageReceived, notifier,
+                             [notifier](const NtfyEvent &msg) { notifier->notify(msg); });
 #endif
         QObject::connect(poller, &NtfyPoller::finished,
                          [](bool ok, const QString &lastId, const QString &error) {
@@ -148,7 +149,8 @@ int main(int argc, char *argv[])
     QObject::connect(stream, &NtfyStream::messageReceived, &printMessage);
 #ifdef NTFY_HAVE_NOTIFY
     if (notifier)
-        QObject::connect(stream, &NtfyStream::messageReceived, notifier, &NtfyNotifier::notify);
+        QObject::connect(stream, &NtfyStream::messageReceived, notifier,
+                         [notifier](const NtfyEvent &msg) { notifier->notify(msg); });
 #endif
     QObject::connect(stream, &NtfyStream::errorOccurred, [](const QString &error) {
         err() << "warning: " << error << endl;

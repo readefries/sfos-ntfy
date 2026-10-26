@@ -14,12 +14,14 @@ BuildRequires:  pkgconfig(Qt5DBus)
 BuildRequires:  pkgconfig(nemonotifications-qt5)
 BuildRequires:  pkgconfig(sailfishsecrets)
 Requires:       sailfishsecretsdaemon-secretsplugins-default
+Requires:       qt5-plugin-sqldriver-sqlite
 
 %description
 Native ntfy (https://ntfy.sh) push notification client for Sailfish OS.
 
-This early build only contains harbour-ntfy-cli, a command line tool to
-subscribe to topics and print incoming messages.
+This early build contains harbour-ntfy-daemon, which keeps subscriptions
+connected in the background, and harbour-ntfy-cli, a command line tool to
+subscribe to topics and print incoming messages. There is no UI yet.
 
 %prep
 %autosetup -n %{name}-%{version}
@@ -33,7 +35,14 @@ make check
 
 %install
 %qmake5_install
+# Start the daemon with the user session.
+mkdir -p %{buildroot}%{_prefix}/lib/systemd/user/post-user-session.target.wants
+ln -s ../harbour-ntfy-daemon.service %{buildroot}%{_prefix}/lib/systemd/user/post-user-session.target.wants/
 
 %files
 %license %{_datadir}/licenses/%{name}/LICENSE
 %{_bindir}/%{name}-cli
+%{_bindir}/%{name}-daemon
+%{_prefix}/lib/systemd/user/harbour-ntfy-daemon.service
+%{_prefix}/lib/systemd/user/post-user-session.target.wants/harbour-ntfy-daemon.service
+%{_datadir}/dbus-1/services/nl.readefries.harbourntfy.service

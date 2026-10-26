@@ -30,7 +30,16 @@ void NtfyNotifier::setAppIcon(const QString &appIcon)
     m_appIcon = appIcon;
 }
 
-void NtfyNotifier::notify(const NtfyEvent &message)
+void NtfyNotifier::setActivationCall(const QString &service, const QString &path, const QString &interface,
+                                     const QString &method)
+{
+    m_service = service;
+    m_path = path;
+    m_interface = interface;
+    m_method = method;
+}
+
+void NtfyNotifier::notify(const NtfyEvent &message, qint64 tag)
 {
     const NtfyNotificationContent content = NtfyNotificationContent::fromMessage(message);
 
@@ -50,9 +59,15 @@ void NtfyNotifier::notify(const NtfyEvent &message)
 
     // Lipstick only reports activation for notifications that have a "default" action. Without a
     // D-Bus callback it just signals us (if we're still running) and dismisses the notification.
-    QVariantMap defaultAction;
-    defaultAction.insert(QStringLiteral("name"), QStringLiteral("default"));
-    notification->setRemoteAction(defaultAction);
+    if (m_method.isEmpty()) {
+        QVariantMap defaultAction;
+        defaultAction.insert(QStringLiteral("name"), QStringLiteral("default"));
+        notification->setRemoteAction(defaultAction);
+    } else {
+        notification->setRemoteAction(Notification::remoteAction(
+                QStringLiteral("default"), QString(), m_service, m_path, m_interface, m_method,
+                QVariantList() << QVariant::fromValue<qlonglong>(tag)));
+    }
 
     connect(notification, &Notification::clicked, this, [this, message]() {
         emit clicked(message);

@@ -19,9 +19,14 @@ public:
 
     void setAppName(const QString &appName);
     void setAppIcon(const QString &appIcon);
+    // When set, tapping a notification makes lipstick call this D-Bus method with the tag passed
+    // to notify() as its only (int64) argument. That works even if this process has exited since,
+    // given D-Bus activation. Otherwise only clicked() reports taps.
+    void setActivationCall(const QString &service, const QString &path, const QString &interface,
+                           const QString &method);
 
 public slots:
-    void notify(const NtfyEvent &message);
+    void notify(const NtfyEvent &message, qint64 tag = 0);
 
 signals:
     // Only delivered while this process is alive; lipstick keeps the notification regardless.
@@ -30,6 +35,10 @@ signals:
 private:
     QString m_appName;
     QString m_appIcon;
+    QString m_service;
+    QString m_path;
+    QString m_interface;
+    QString m_method;
     // Keep recent notification objects around so clicks on them still reach us.
     QList<QPointer<Notification>> m_recent;
 };
