@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "ntfymessage.h"
+#include "ntfynotificationcontent.h"
 #include "ntfypoller.h"
 #include "ntfyserver.h"
 #include "ntfystream.h"
@@ -81,6 +82,11 @@ private slots:
     void parseInvalid();
     void priorityDefaults_data();
     void priorityDefaults();
+
+    void notificationContent_data();
+    void notificationContent();
+    void notificationPriority_data();
+    void notificationPriority();
 
     void subscribeUrl_data();
     void subscribeUrl();
@@ -196,6 +202,69 @@ void TestNtfy::priorityDefaults()
     QFETCH(int, priority);
 
     QCOMPARE(NtfyEvent::fromJson(json).priority, priority);
+}
+
+void TestNtfy::notificationContent_data()
+{
+    QTest::addColumn<QByteArray>("json");
+    QTest::addColumn<QString>("summary");
+    QTest::addColumn<QString>("body");
+
+    QTest::newRow("title and message")
+            << QByteArray(R"({"event":"message","topic":"t","title":"Backup","message":"done"})")
+            << QStringLiteral("Backup") << QStringLiteral("done");
+    QTest::newRow("topic as fallback title")
+            << QByteArray(R"({"event":"message","topic":"alerts","message":"disk full"})")
+            << QStringLiteral("alerts") << QStringLiteral("disk full");
+    QTest::newRow("emoji and plain tags")
+            << QByteArray(R"({"event":"message","topic":"t","title":"Login","message":"from 1.2.3.4",)"
+                          R"("tags":["warning","ssh","skull","prod"]})")
+            << QString::fromUtf8("⚠️ 💀 Login") << QStringLiteral("from 1.2.3.4\nTags: ssh, prod");
+    QTest::newRow("attachment only")
+            << QByteArray(R"({"event":"message","topic":"t","attachment":{"name":"report.pdf",)"
+                          R"("url":"https://ntfy.sh/file/x.pdf"}})")
+            << QStringLiteral("t") << QStringLiteral("report.pdf");
+}
+
+void TestNtfy::notificationContent()
+{
+    QFETCH(QByteArray, json);
+    QFETCH(QString, summary);
+    QFETCH(QString, body);
+
+    const NtfyNotificationContent content = NtfyNotificationContent::fromMessage(NtfyEvent::fromJson(json));
+    QCOMPARE(content.summary, summary);
+    QCOMPARE(content.body, body);
+}
+
+void TestNtfy::notificationPriority_data()
+{
+    QTest::addColumn<int>("priority");
+    QTest::addColumn<int>("urgency");
+    QTest::addColumn<bool>("popup");
+
+    QTest::newRow("min") << 1 << int(NtfyNotificationContent::Low) << false;
+    QTest::newRow("low") << 2 << int(NtfyNotificationContent::Low) << false;
+    QTest::newRow("default") << 3 << int(NtfyNotificationContent::Normal) << true;
+    QTest::newRow("high") << 4 << int(NtfyNotificationContent::Normal) << true;
+    QTest::newRow("max") << 5 << int(NtfyNotificationContent::Critical) << true;
+}
+
+void TestNtfy::notificationPriority()
+{
+    QFETCH(int, priority);
+    QFETCH(int, urgency);
+    QFETCH(bool, popup);
+
+    NtfyEvent message;
+    message.type = NtfyEvent::Message;
+    message.priority = priority;
+    message.time = 1643935928;
+
+    const NtfyNotificationContent content = NtfyNotificationContent::fromMessage(message);
+    QCOMPARE(int(content.urgency), urgency);
+    QCOMPARE(content.popup, popup);
+    QCOMPARE(content.timestamp.toMSecsSinceEpoch(), Q_INT64_C(1643935928000));
 }
 
 void TestNtfy::subscribeUrl_data()

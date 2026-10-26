@@ -4,6 +4,13 @@ SUBDIRS = core cli tests
 cli.depends = core
 tests.depends = core
 
+# Sailfish notifications are only available when building for the device.
+packagesExist(nemonotifications-qt5) {
+    SUBDIRS += notify
+    notify.depends = core
+    cli.depends += notify
+}
+
 OTHER_FILES += rpm/harbour-ntfy.spec README.md
 
 license.files = LICENSE
