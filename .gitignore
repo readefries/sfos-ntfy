@@ -8,4 +8,4 @@ Makefile*
 /build*/
 /RPMS/
 /cli/harbour-ntfy-cli
-/tests/tst_ntfy
+/tests/*/tst_*

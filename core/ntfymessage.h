@@ -65,6 +65,8 @@ struct NtfyEvent
     bool isValid() const { return type != Invalid; }
 
     static NtfyEvent fromJson(const QByteArray &line, QString *error = nullptr);
+    // Same format as the ntfy JSON stream, so fromJson(toJson()) round-trips.
+    QByteArray toJson() const;
 };
 
 Q_DECLARE_METATYPE(NtfyEvent)

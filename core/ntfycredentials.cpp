@@ -26,16 +26,8 @@ bool NtfyMemoryCredentialStore::remove(const QString &key, QString *)
 
 QString ntfyCredentialKey(const QUrl &serverUrl)
 {
-    // Normalize so that "https://NTFY.sh/" and "https://ntfy.sh" share credentials.
-    QUrl url = serverUrl.adjusted(QUrl::RemoveUserInfo | QUrl::RemoveQuery | QUrl::RemoveFragment
-                                  | QUrl::NormalizePathSegments);
-    QString path = url.path();
-    while (path.endsWith(QLatin1Char('/')))
-        path.chop(1);
-    url.setPath(path);
-    url.setHost(url.host().toLower());
-
-    const QByteArray hash = QCryptographicHash::hash(url.toEncoded(), QCryptographicHash::Sha256);
+    const QByteArray hash = QCryptographicHash::hash(ntfyNormalizeServerUrl(serverUrl).toEncoded(),
+                                                     QCryptographicHash::Sha256);
     return QStringLiteral("server") + QString::fromLatin1(hash.toHex());
 }
 

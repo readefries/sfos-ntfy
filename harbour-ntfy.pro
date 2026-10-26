@@ -1,8 +1,9 @@
 TEMPLATE = subdirs
 
-SUBDIRS = core cli tests
+SUBDIRS = core service cli tests
+service.depends = core
 cli.depends = core
-tests.depends = core
+tests.depends = core service
 
 # Sailfish notifications are only available when building for the device.
 packagesExist(nemonotifications-qt5) {

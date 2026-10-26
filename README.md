@@ -7,10 +7,11 @@ Native [ntfy](https://ntfy.sh) client for Sailfish OS. Work in progress.
 | Path    | What |
 |---------|------|
 | `core/` | Static library: message parsing, server config/auth, `NtfyStream` (long-lived JSON stream with keepalive watchdog, backoff and `since=` resume) and `NtfyPoller` (one-shot `poll=1` catch-up). Qt Core/Network only, so it can be shared by the app and a future daemon. |
+| `service/`| Everything behind the UI: SQLite storage (servers, subscriptions, history; never credentials) and `NtfySubscriptionManager`, which runs one stream per server and resumes after restarts. |
 | `cli/`  | `harbour-ntfy-cli`, a command line spike to try the core on desktop or on the phone over SSH. |
 | `notify/`| Sailfish only: posts messages as system notifications (nemo-qml-plugin-notifications). |
 | `secrets/`| Sailfish only: credential store on Sailfish Secrets (device-lock encrypted collection). |
-| `tests/`| Qt Test suite, including a fake HTTP server for stream/poll behaviour. |
+| `tests/`| Qt Test suites for `core` and `service`, with a fake HTTP ntfy server. |
 | `tools/secrets-check/`| Device check for the credential store; built but not packaged, copy it over by hand. |
 
 Note that sailfish-secretsd identifies applications by their full command line, not their executable
@@ -45,7 +46,7 @@ On a desktop with Qt 5 (e.g. Fedora `qt5-qtbase-devel`):
 ```sh
 mkdir build && cd build
 qmake-qt5 ../harbour-ntfy.pro && make -j
-./tests/tst_ntfy
+./tests/core/tst_ntfy && ./tests/service/tst_service
 ```
 
 ## Trying it

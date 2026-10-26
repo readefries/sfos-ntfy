@@ -27,6 +27,10 @@ struct NtfyServerConfig
     QByteArray authorizationHeader() const;
 };
 
+// Canonical form of a server base URL: no user info, query, fragment or trailing slash, lower
+// case host. "https://NTFY.sh/" and "https://ntfy.sh" are the same server.
+QUrl ntfyNormalizeServerUrl(const QUrl &url);
+
 // Human readable error for a failed request, using ntfy's JSON error body when present.
 QString ntfyErrorString(QNetworkReply *reply, const QByteArray &body);
 

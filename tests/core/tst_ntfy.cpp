@@ -6,72 +6,12 @@
 #include "ntfyserver.h"
 #include "ntfystream.h"
 
+#include "fakentfyserver.h"
+
 #include <QNetworkAccessManager>
 #include <QNetworkRequest>
 #include <QSignalSpy>
-#include <QTcpServer>
-#include <QTcpSocket>
 #include <QtTest>
-
-// Minimal HTTP server: records request lines and answers each connection with a scripted
-// response, written in separate chunks to exercise line reassembly.
-class FakeNtfyServer : public QTcpServer
-{
-    Q_OBJECT
-public:
-    struct Response {
-        int status = 200;
-        QByteArray headers; // extra header lines, each ending in \r\n
-        QList<QByteArray> chunks;
-        bool closeAfter = true;
-    };
-
-    QList<Response> responses;
-    QList<QByteArray> requestLines;
-    QList<QByteArray> authHeaders;
-
-    QUrl url() const { return QUrl(QStringLiteral("http://127.0.0.1:%1").arg(serverPort())); }
-
-protected:
-    void incomingConnection(qintptr handle) override
-    {
-        QTcpSocket *socket = new QTcpSocket(this);
-        socket->setSocketDescriptor(handle);
-        connect(socket, &QTcpSocket::readyRead, this, [this, socket]() {
-            QByteArray &buffer = m_pending[socket];
-            buffer += socket->readAll();
-            if (!buffer.contains("\r\n\r\n"))
-                return;
-
-            const QList<QByteArray> lines = buffer.split('\n');
-            requestLines.append(lines.first().trimmed());
-            QByteArray auth;
-            for (const QByteArray &line : lines) {
-                if (line.toLower().startsWith("authorization:"))
-                    auth = line.mid(line.indexOf(':') + 1).trimmed();
-            }
-            authHeaders.append(auth);
-            m_pending.remove(socket);
-
-            const Response response = responses.isEmpty() ? Response() : responses.takeFirst();
-            socket->write("HTTP/1.1 " + QByteArray::number(response.status) + " X\r\n"
-                          "Content-Type: application/x-ndjson\r\n"
-                          + response.headers +
-                          "Connection: close\r\n\r\n");
-            for (int i = 0; i < response.chunks.size(); ++i) {
-                const QByteArray chunk = response.chunks.at(i);
-                QTimer::singleShot(20 * (i + 1), socket, [socket, chunk]() { socket->write(chunk); });
-            }
-            if (response.closeAfter) {
-                QTimer::singleShot(20 * (response.chunks.size() + 1), socket,
-                                   [socket]() { socket->disconnectFromHost(); });
-            }
-        });
-    }
-
-private:
-    QHash<QTcpSocket *, QByteArray> m_pending;
-};
 
 class TestNtfy : public QObject
 {
@@ -79,6 +19,7 @@ class TestNtfy : public QObject
 
 private slots:
     void parseMessage();
+    void jsonRoundTrip();
     void parseControlEvents_data();
     void parseControlEvents();
     void parseInvalid_data();
@@ -145,6 +86,42 @@ void TestNtfy::parseMessage()
     QCOMPARE(event.attachment.type, QStringLiteral("image/jpeg"));
     QCOMPARE(event.attachment.size, Q_INT64_C(309399));
     QCOMPARE(event.attachment.url, QStringLiteral("https://ntfy.sh/file/sPs71M8A2T.jpg"));
+}
+
+void TestNtfy::jsonRoundTrip()
+{
+    const QByteArray json = R"({"id":"sPs71M8A2T","time":1643935928,"expires":1643979128,
+        "event":"message","topic":"mytopic","priority":5,"tags":["warning","skull"],
+        "click":"https://example.com","icon":"https://example.com/i.png","title":"Hi","message":"there",
+        "content_type":"text/markdown",
+        "actions":[{"action":"http","label":"Turn off","url":"https://api.example.com/off","method":"PUT",
+                    "headers":{"X-Token":"abc"},"body":"{}","clear":true}],
+        "attachment":{"name":"flower.jpg","type":"image/jpeg","size":309399,"expires":1643946728,
+                      "url":"https://ntfy.sh/file/sPs71M8A2T.jpg"}})";
+
+    const NtfyEvent original = NtfyEvent::fromJson(json);
+    const NtfyEvent copy = NtfyEvent::fromJson(original.toJson());
+    QCOMPARE(copy.type, original.type);
+    QCOMPARE(copy.id, original.id);
+    QCOMPARE(copy.time, original.time);
+    QCOMPARE(copy.expires, original.expires);
+    QCOMPARE(copy.topic, original.topic);
+    QCOMPARE(copy.title, original.title);
+    QCOMPARE(copy.message, original.message);
+    QCOMPARE(copy.priority, original.priority);
+    QCOMPARE(copy.tags, original.tags);
+    QCOMPARE(copy.click, original.click);
+    QCOMPARE(copy.icon, original.icon);
+    QCOMPARE(copy.contentType, original.contentType);
+    QCOMPARE(copy.actions.size(), 1);
+    QCOMPARE(copy.actions.at(0).method, QStringLiteral("PUT"));
+    QCOMPARE(copy.actions.at(0).headers, original.actions.at(0).headers);
+    QVERIFY(copy.actions.at(0).clear);
+    QCOMPARE(copy.attachment.url, original.attachment.url);
+    QCOMPARE(copy.attachment.size, original.attachment.size);
+
+    const NtfyEvent keepalive = NtfyEvent::fromJson(R"({"id":"k","time":5,"event":"keepalive","topic":"t"})");
+    QCOMPARE(NtfyEvent::fromJson(keepalive.toJson()).type, NtfyEvent::Keepalive);
 }
 
 void TestNtfy::parseControlEvents_data()

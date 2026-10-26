@@ -85,3 +85,15 @@ QUrl ntfyRedirectTarget(QNetworkReply *reply)
         return QUrl();
     return reply->url().resolved(QUrl::fromEncoded(location));
 }
+
+QUrl ntfyNormalizeServerUrl(const QUrl &serverUrl)
+{
+    QUrl url = serverUrl.adjusted(QUrl::RemoveUserInfo | QUrl::RemoveQuery | QUrl::RemoveFragment
+                                  | QUrl::NormalizePathSegments);
+    QString path = url.path();
+    while (path.endsWith(QLatin1Char('/')))
+        path.chop(1);
+    url.setPath(path);
+    url.setHost(url.host().toLower());
+    return url;
+}

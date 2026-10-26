@@ -41,6 +41,66 @@ NtfyAction parseAction(const QJsonObject &obj)
 
 } // namespace
 
+QByteArray NtfyEvent::toJson() const
+{
+    QJsonObject obj;
+    obj.insert(QStringLiteral("event"), event);
+    obj.insert(QStringLiteral("id"), id);
+    obj.insert(QStringLiteral("time"), double(time));
+    if (expires)
+        obj.insert(QStringLiteral("expires"), double(expires));
+    obj.insert(QStringLiteral("topic"), topic);
+
+    if (type == Message) {
+        auto insertIfSet = [&obj](const char *key, const QString &value) {
+            if (!value.isEmpty())
+                obj.insert(QLatin1String(key), value);
+        };
+        insertIfSet("title", title);
+        insertIfSet("message", message);
+        insertIfSet("click", click);
+        insertIfSet("icon", icon);
+        insertIfSet("content_type", contentType);
+        obj.insert(QStringLiteral("priority"), priority);
+        if (!tags.isEmpty())
+            obj.insert(QStringLiteral("tags"), QJsonArray::fromStringList(tags));
+
+        QJsonArray actionArray;
+        for (const NtfyAction &action : actions) {
+            QJsonObject a;
+            a.insert(QStringLiteral("action"), action.action);
+            a.insert(QStringLiteral("label"), action.label);
+            if (!action.url.isEmpty())
+                a.insert(QStringLiteral("url"), action.url);
+            if (!action.method.isEmpty())
+                a.insert(QStringLiteral("method"), action.method);
+            if (!action.body.isEmpty())
+                a.insert(QStringLiteral("body"), action.body);
+            if (action.clear)
+                a.insert(QStringLiteral("clear"), true);
+            if (!action.headers.isEmpty())
+                a.insert(QStringLiteral("headers"), QJsonObject::fromVariantMap(action.headers));
+            if (!action.extras.isEmpty())
+                a.insert(QStringLiteral("extras"), QJsonObject::fromVariantMap(action.extras));
+            actionArray.append(a);
+        }
+        if (!actionArray.isEmpty())
+            obj.insert(QStringLiteral("actions"), actionArray);
+
+        if (attachment.isValid()) {
+            QJsonObject a;
+            a.insert(QStringLiteral("name"), attachment.name);
+            a.insert(QStringLiteral("type"), attachment.type);
+            a.insert(QStringLiteral("url"), attachment.url);
+            a.insert(QStringLiteral("size"), double(attachment.size));
+            a.insert(QStringLiteral("expires"), double(attachment.expires));
+            obj.insert(QStringLiteral("attachment"), a);
+        }
+    }
+
+    return QJsonDocument(obj).toJson(QJsonDocument::Compact);
+}
+
 NtfyEvent NtfyEvent::fromJson(const QByteArray &line, QString *error)
 {
     NtfyEvent result;
