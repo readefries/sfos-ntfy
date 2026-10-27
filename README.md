@@ -38,9 +38,14 @@ Run `sfdk` from a path under the SDK workspace as the SDK sees it (`/home/...`, 
 `sfdk build` also runs the test suite (`%check` in the spec) against the target's Qt 5.6,
 emulated for ARM targets. Pass `--no-check` to skip it.
 
-CI (`.github/workflows/build.yml`) does the same for aarch64, armv7hl and i486 on every push
-and pull request, using the community [coderus/sailfishos-platform-sdk](https://hub.docker.com/r/coderus/sailfishos-platform-sdk)
-images, and uploads the RPMs as build artifacts.
+`scripts/docker-build.sh [release] [arch]` does the same in a community
+[coderus/sailfishos-platform-sdk](https://hub.docker.com/r/coderus/sailfishos-platform-sdk) image,
+with RPMs in `build-docker/<release>-<arch>/`. CI (`.github/workflows/build.yml`) runs it on every
+push and pull request for 5.1.0.11 (aarch64, armv7hl, i486) and 5.2.0.15 (aarch64), and uploads
+the RPMs as build artifacts.
+
+5.1.0.11 is the oldest supported release and the newest official SDK target; there is no official
+5.2 target yet, so 5.2 is covered by the community image. Both ship Qt 5.6.3.
 
 On a desktop with Qt 5 (e.g. Fedora `qt5-qtbase-devel`):
 

@@ -5,37 +5,29 @@ on:
   pull_request:
   workflow_dispatch:
 
-env:
-  SFOS_RELEASE: 5.1.0.11
-
 jobs:
   build:
-    name: SailfishOS ${{ matrix.arch }}
+    name: SailfishOS ${{ matrix.release }} ${{ matrix.arch }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        arch: [aarch64, armv7hl, i486]
+        # 5.1.0.11 is the oldest supported release and the newest official SDK target.
+        # 5.2 has no official target yet; the community image covers it.
+        include:
+          - { release: 5.1.0.11, arch: aarch64 }
+          - { release: 5.1.0.11, arch: armv7hl }
+          - { release: 5.1.0.11, arch: i486 }
+          - { release: 5.2.0.15, arch: aarch64 }
     steps:
       - uses: actions/checkout@v4
 
-      # The SDK image runs as mersdk (uid 100000), so build from a copy inside the
-      # container instead of the runner-owned checkout. %check runs the Qt tests.
+      # %check in the spec runs the Qt tests.
       - name: Build RPM and run tests
-        run: |
-          mkdir -p RPMS && chmod 777 RPMS
-          docker run --rm \
-            -v "$PWD":/source:ro \
-            -v "$PWD/RPMS":/output \
-            coderus/sailfishos-platform-sdk-${{ matrix.arch }}:${SFOS_RELEASE} \
-            bash -euc "
-              cp -r /source ~/src && mkdir ~/build && cd ~/build
-              mb2 -t SailfishOS-${SFOS_RELEASE}-${{ matrix.arch }} build ~/src
-              cp RPMS/*.rpm /output/
-            "
+        run: scripts/docker-build.sh ${{ matrix.release }} ${{ matrix.arch }}
 
       - uses: actions/upload-artifact@v4
         with:
-          name: harbour-ntfy-${{ matrix.arch }}
-          path: RPMS/*.rpm
+          name: harbour-ntfy-${{ matrix.release }}-${{ matrix.arch }}
+          path: build-docker/${{ matrix.release }}-${{ matrix.arch }}/*.rpm
           if-no-files-found: error
