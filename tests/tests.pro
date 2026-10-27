@@ -1,2 +1,2 @@
 TEMPLATE = subdirs
-SUBDIRS = core service
+SUBDIRS = core service client

@@ -9,6 +9,8 @@ Native [ntfy](https://ntfy.sh) client for Sailfish OS. Work in progress.
 | `core/` | Static library: message parsing, server config/auth, `NtfyStream` (long-lived JSON stream with keepalive watchdog, backoff and `since=` resume) and `NtfyPoller` (one-shot `poll=1` catch-up). Qt Core/Network only, so it can be shared by the app and a future daemon. |
 | `service/`| Everything behind the UI: SQLite storage (servers, subscriptions, history; never credentials) and `NtfySubscriptionManager`, which runs one stream per server and resumes after restarts. |
 | `daemon/`| `harbour-ntfy-daemon`: systemd user service (started with the session, or by D-Bus activation) that owns credentials, storage, connections and notifications, and serves the UI on the session bus as `nl.readefries.harbourntfy`. |
+| `client/`| The UI's side of the D-Bus API: `NtfyDaemonClient` plus list models for subscriptions and messages. |
+| `app/`  | `harbour-ntfy`, the Silica UI. Sandboxed by Sailjail without any permissions: its `OrganizationName.ApplicationName` is the daemon's bus name, which is what lets it talk to the daemon. Note that Sailjail doesn't verify those names, so another sandboxed app claiming them could talk to the daemon too. |
 | `cli/`  | `harbour-ntfy-cli`, a command line spike to try the core on desktop or on the phone over SSH. |
 | `notify/`| Sailfish only: posts messages as system notifications (nemo-qml-plugin-notifications). |
 | `secrets/`| Sailfish only: credential store on Sailfish Secrets (device-lock encrypted collection). |
@@ -52,7 +54,9 @@ On a desktop with Qt 5 (e.g. Fedora `qt5-qtbase-devel`):
 ```sh
 mkdir build && cd build
 qmake-qt5 ../harbour-ntfy.pro && make -j
-./tests/core/tst_ntfy && ./tests/service/tst_service
+./tests/core/tst_ntfy
+dbus-run-session -- ./tests/service/tst_service
+dbus-run-session -- ./tests/client/tst_client
 ```
 
 ## Trying it

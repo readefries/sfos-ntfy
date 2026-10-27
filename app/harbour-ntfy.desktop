@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+X-Nemo-Application-Type=silica-qt5
+Name=ntfy
+Comment=Push notifications from ntfy servers
+Icon=harbour-ntfy
+Exec=harbour-ntfy
+
+[X-Sailjail]
+# The UI only talks to harbour-ntfy-daemon. Owning OrganizationName.ApplicationName on D-Bus
+# (nl.readefries.harbourntfy, the daemon's name) is what allows it to talk to the daemon.
+Permissions=
+OrganizationName=nl.readefries
+ApplicationName=harbourntfy
