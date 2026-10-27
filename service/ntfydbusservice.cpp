@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "ntfydbusservice.h"
 
+#include "ntfydeliverycontroller.h"
 #include "ntfysubscriptionmanager.h"
 
 #include <QDBusConnectionInterface>
@@ -55,6 +56,15 @@ NtfyDBusService::NtfyDBusService(NtfySubscriptionManager *manager, QObject *pare
         emit ServerStateChanged(serverId, stateName(state));
     });
     connect(m_manager, &NtfySubscriptionManager::serverError, this, &NtfyDBusService::ServerError);
+}
+
+void NtfyDBusService::setDeliveryController(NtfyDeliveryController *delivery)
+{
+    if (m_delivery)
+        m_delivery->disconnect(this);
+    m_delivery = delivery;
+    if (m_delivery)
+        connect(m_delivery, &NtfyDeliveryController::deliveryChanged, this, &NtfyDBusService::DeliveryChanged);
 }
 
 bool NtfyDBusService::registerOn(QDBusConnection connection, QString *error)
@@ -186,6 +196,62 @@ QString NtfyDBusService::Messages(qlonglong subscriptionId, int limit, qlonglong
     for (const NtfyStoredMessage &message : m_manager->database()->messages(subscriptionId, qBound(1, limit, 500), beforeId))
         array.append(messageJson(message));
     return toString(array);
+}
+
+QString NtfyDBusService::Delivery()
+{
+    if (!m_delivery) {
+        replyError(QStringLiteral("delivery settings are not available"));
+        return QString();
+    }
+
+    QJsonObject options;
+    for (NtfyDeliveryController::Mode mode : {NtfyDeliveryController::Instant, NtfyDeliveryController::Balanced,
+                                              NtfyDeliveryController::BatterySaver}) {
+        QJsonArray seconds;
+        for (int interval : NtfyDeliveryController::intervals(mode))
+            seconds.append(interval);
+        options.insert(NtfyDeliveryController::modeName(mode), seconds);
+    }
+
+    QJsonObject obj;
+    obj.insert(QStringLiteral("mode"), NtfyDeliveryController::modeName(m_delivery->mode()));
+    obj.insert(QStringLiteral("interval"), m_delivery->interval());
+    obj.insert(QStringLiteral("options"), options);
+    return QString::fromUtf8(QJsonDocument(obj).toJson(QJsonDocument::Compact));
+}
+
+void NtfyDBusService::SetDelivery(const QString &mode, int intervalSeconds)
+{
+    NtfyDeliveryController::Mode parsed;
+    if (!m_delivery) {
+        replyError(QStringLiteral("delivery settings are not available"));
+        return;
+    }
+    if (!NtfyDeliveryController::modeFromName(mode, &parsed)) {
+        replyError(QStringLiteral("mode must be instant, balanced or battery-saver"));
+        return;
+    }
+    QString error;
+    if (!m_delivery->setDelivery(parsed, intervalSeconds, &error))
+        replyError(error);
+}
+
+QString NtfyDBusService::DeliveryStats()
+{
+    if (!m_delivery) {
+        replyError(QStringLiteral("delivery settings are not available"));
+        return QString();
+    }
+
+    const NtfyDeliveryController::Stats stats = m_delivery->stats();
+    QJsonObject obj;
+    obj.insert(QStringLiteral("wakeups"), stats.wakeups);
+    obj.insert(QStringLiteral("lastWakeup"), double(stats.lastWakeup));
+    obj.insert(QStringLiteral("messages"), stats.messages);
+    obj.insert(QStringLiteral("averageDelay"), stats.messages ? double(stats.totalDelay) / stats.messages : 0.0);
+    obj.insert(QStringLiteral("maxDelay"), double(stats.maxDelay));
+    return QString::fromUtf8(QJsonDocument(obj).toJson(QJsonDocument::Compact));
 }
 
 void NtfyDBusService::NotificationActivated(qlonglong subscriptionId)

@@ -8,6 +8,7 @@
 #include <QDBusContext>
 #include <QObject>
 
+class NtfyDeliveryController;
 class NtfySubscriptionManager;
 struct NtfySubscriptionRecord;
 struct NtfyStoredMessage;
@@ -30,6 +31,8 @@ class NtfyDBusService : public QObject, protected QDBusContext
 public:
     explicit NtfyDBusService(NtfySubscriptionManager *manager, QObject *parent = nullptr);
 
+    void setDeliveryController(NtfyDeliveryController *delivery);
+
     // Exports this object and claims the service name. Fails if another daemon already runs.
     bool registerOn(QDBusConnection connection, QString *error = nullptr);
 
@@ -51,6 +54,13 @@ public slots:
     // Newest first: [{"id", "read", "event"}], "event" in the ntfy JSON format.
     Q_SCRIPTABLE QString Messages(qlonglong subscriptionId, int limit, qlonglong beforeId);
 
+    // {"mode", "interval", "options": {"instant": [seconds, ...], "balanced": [...], "battery-saver": [...]}}
+    Q_SCRIPTABLE QString Delivery();
+    Q_SCRIPTABLE void SetDelivery(const QString &mode, int intervalSeconds);
+    // Since the daemon started: {"wakeups", "lastWakeup", "messages", "averageDelay", "maxDelay"},
+    // delays in seconds between publishing and arrival.
+    Q_SCRIPTABLE QString DeliveryStats();
+
     // Called by lipstick when the user taps one of our notifications.
     Q_SCRIPTABLE void NotificationActivated(qlonglong subscriptionId);
     Q_SCRIPTABLE void ReconnectAll();
@@ -60,6 +70,7 @@ signals:
     Q_SCRIPTABLE void SubscriptionsChanged();
     Q_SCRIPTABLE void ServerStateChanged(qlonglong serverId, const QString &state);
     Q_SCRIPTABLE void ServerError(qlonglong serverId, const QString &error);
+    Q_SCRIPTABLE void DeliveryChanged();
 
     // Local only, not exported.
     void notificationActivated(qlonglong subscriptionId);
@@ -68,6 +79,7 @@ private:
     void replyError(const QString &error);
 
     NtfySubscriptionManager *m_manager;
+    NtfyDeliveryController *m_delivery = nullptr;
 };
 
 #endif // NTFYDBUSSERVICE_H

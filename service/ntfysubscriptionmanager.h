@@ -30,6 +30,14 @@ public:
     void stop();
     bool isStarted() const { return m_started; }
 
+    // Off means no permanent connections (battery saver): use pollAll() to fetch messages.
+    void setStreaming(bool streaming);
+    bool isStreaming() const { return m_streaming; }
+    // Fetches what was missed from every server once, then emits pollFinished().
+    // Returns false (and does nothing) while a previous poll is still running.
+    bool pollAll();
+    bool isPolling() const { return m_pendingPolls > 0; }
+
     // Adds a server or, if it already exists, replaces its credentials. Pass an empty token and
     // username for anonymous access. Returns the server id, or 0 with *error set.
     qint64 addServer(const QUrl &url, const QString &token, const QString &username,
@@ -44,6 +52,11 @@ public:
 
     // Disconnected for servers without subscriptions.
     NtfyStream::State serverState(qint64 serverId) const;
+    // Every stream is connected (trivially true without streams).
+    bool allConnected() const;
+    // Reconnects streams that aren't connected, or have been silent for longer than
+    // maxSilenceMsecs. Returns how many it reconnected.
+    int reconnectStale(qint64 maxSilenceMsecs);
 
     static bool isValidTopic(const QString &topic);
 
@@ -57,22 +70,22 @@ signals:
     void serverStateChanged(qint64 serverId, NtfyStream::State state);
     void serverError(qint64 serverId, const QString &error);
     void subscriptionsChanged();
+    void pollFinished();
 
 private:
-    struct Connection {
-        NtfyStream *stream = nullptr;
-        QHash<QString, qint64> subscriptionByTopic;
-    };
-
+    void syncAll();
     void syncServer(qint64 serverId);
+    bool serverConfig(const NtfyServerRecord &server, NtfyServerConfig *config);
     void dropConnection(qint64 serverId);
     void handleMessage(qint64 serverId, const NtfyEvent &event);
 
     NtfyDatabase *m_database;
     NtfyCredentialStore *m_credentials;
     QNetworkAccessManager *m_nam;
-    QHash<qint64, Connection> m_connections;
+    QHash<qint64, NtfyStream *> m_streams;
+    int m_pendingPolls = 0;
     bool m_started = false;
+    bool m_streaming = true;
 };
 
 #endif // NTFYSUBSCRIPTIONMANAGER_H

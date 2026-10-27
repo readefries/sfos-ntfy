@@ -80,8 +80,14 @@ public:
     bool markRead(qint64 subscriptionId);
     // ntfy timestamp of the newest stored message of a server, or 0. Used to resume with since=.
     qint64 newestMessageTime(qint64 serverId) const;
+    // Where to resume a server from with since=: its newest stored message, or when its first
+    // subscription was made if there are no messages yet (so nothing older shows up).
+    qint64 resumeTime(qint64 serverId) const;
     // Keeps the newest keepPerSubscription messages of every subscription. Returns how many went.
     int pruneMessages(int keepPerSubscription);
+
+    QString setting(const QString &key, const QString &defaultValue = QString()) const;
+    bool setSetting(const QString &key, const QString &value);
 
 private:
     bool migrate();

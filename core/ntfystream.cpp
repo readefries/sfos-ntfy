@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "ntfystream.h"
 
+#include <QDateTime>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 
@@ -63,6 +64,11 @@ void NtfyStream::setMaxReconnectDelay(int msecs)
     m_maxReconnectDelay = msecs;
 }
 
+qint64 NtfyStream::msecsSinceLastData() const
+{
+    return m_lastDataMsecs ? QDateTime::currentMSecsSinceEpoch() - m_lastDataMsecs : -1;
+}
+
 void NtfyStream::start()
 {
     if (m_state == Connecting || m_state == Connected)
@@ -99,6 +105,7 @@ void NtfyStream::connectStream()
 
     teardownReply();
     m_buffer.clear();
+    m_lastDataMsecs = 0;
 
     const QString since = m_lastId.isEmpty() ? m_initialSince : m_lastId;
     m_reply = m_nam->get(m_server.request(m_server.subscribeUrl(m_topics, since)));
@@ -117,6 +124,7 @@ void NtfyStream::onReadyRead()
         return;
 
     m_keepaliveTimer.start();
+    m_lastDataMsecs = QDateTime::currentMSecsSinceEpoch();
     m_buffer += m_reply->readAll();
 
     int newline;

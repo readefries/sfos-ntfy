@@ -11,7 +11,13 @@ include(../secrets/secrets.pri)
 include(../service/service.pri)
 include(../core/core.pri)
 
-SOURCES += main.cpp
+CONFIG += link_pkgconfig
+PKGCONFIG += keepalive
+
+HEADERS += ntfybackgroundactivityscheduler.h
+SOURCES += \
+    main.cpp \
+    ntfybackgroundactivityscheduler.cpp
 
 target.path = /usr/bin
 

@@ -2,6 +2,7 @@
 #include "ntfysubscriptionmanager.h"
 
 #include "ntfycredentials.h"
+#include "ntfypoller.h"
 
 #include <QRegularExpression>
 
@@ -40,16 +41,30 @@ void NtfySubscriptionManager::start()
     m_started = true;
 
     m_database->pruneMessages(MaxStoredMessages);
-    for (const NtfyServerRecord &server : m_database->servers())
-        syncServer(server.id);
+    syncAll();
 }
 
 void NtfySubscriptionManager::stop()
 {
-    const QList<qint64> serverIds = m_connections.keys();
+    const QList<qint64> serverIds = m_streams.keys();
     for (qint64 serverId : serverIds)
         dropConnection(serverId);
     m_started = false;
+}
+
+void NtfySubscriptionManager::setStreaming(bool streaming)
+{
+    if (m_streaming == streaming)
+        return;
+    m_streaming = streaming;
+    if (m_started)
+        syncAll();
+}
+
+void NtfySubscriptionManager::syncAll()
+{
+    for (const NtfyServerRecord &server : m_database->servers())
+        syncServer(server.id);
 }
 
 qint64 NtfySubscriptionManager::addServer(const QUrl &url, const QString &token, const QString &username,
@@ -90,7 +105,7 @@ qint64 NtfySubscriptionManager::addServer(const QUrl &url, const QString &token,
     }
 
     // New credentials for a connected server take effect right away.
-    if (m_started && m_connections.contains(serverId)) {
+    if (m_started && m_streams.contains(serverId)) {
         dropConnection(serverId);
         syncServer(serverId);
     }
@@ -192,88 +207,148 @@ bool NtfySubscriptionManager::markRead(qint64 subscriptionId)
 
 NtfyStream::State NtfySubscriptionManager::serverState(qint64 serverId) const
 {
-    const auto it = m_connections.constFind(serverId);
-    return it == m_connections.constEnd() ? NtfyStream::Disconnected : it->stream->state();
+    NtfyStream *stream = m_streams.value(serverId);
+    return stream ? stream->state() : NtfyStream::Disconnected;
+}
+
+bool NtfySubscriptionManager::allConnected() const
+{
+    for (NtfyStream *stream : m_streams) {
+        if (stream->state() != NtfyStream::Connected)
+            return false;
+    }
+    return true;
 }
 
 void NtfySubscriptionManager::reconnectAll()
 {
-    for (const Connection &connection : m_connections)
-        connection.stream->reconnectNow();
+    for (NtfyStream *stream : m_streams)
+        stream->reconnectNow();
 }
 
-void NtfySubscriptionManager::syncServer(qint64 serverId)
+int NtfySubscriptionManager::reconnectStale(qint64 maxSilenceMsecs)
 {
-    const NtfyServerRecord server = m_database->server(serverId);
-    const QList<NtfySubscriptionRecord> subscriptions = m_database->subscriptions(serverId);
-    if (!server.isValid() || subscriptions.isEmpty()) {
-        dropConnection(serverId);
-        return;
-    }
-
-    QHash<QString, qint64> byTopic;
-    for (const NtfySubscriptionRecord &subscription : subscriptions)
-        byTopic.insert(subscription.topic, subscription.id);
-    QStringList topics = byTopic.keys();
-    topics.sort();
-
-    auto it = m_connections.find(serverId);
-    if (it != m_connections.end()) {
-        it->subscriptionByTopic = byTopic;
-        if (it->stream->topics() != topics) {
-            // Keeps resuming from the stream's last message id.
-            it->stream->setTopics(topics);
-            it->stream->reconnectNow();
+    int reconnected = 0;
+    for (NtfyStream *stream : m_streams) {
+        const qint64 silence = stream->msecsSinceLastData();
+        if (stream->state() != NtfyStream::Connected || silence < 0 || silence > maxSilenceMsecs) {
+            stream->reconnectNow();
+            ++reconnected;
         }
-        return;
+    }
+    return reconnected;
+}
+
+bool NtfySubscriptionManager::pollAll()
+{
+    if (m_pendingPolls > 0)
+        return false;
+
+    for (const NtfyServerRecord &server : m_database->servers()) {
+        QStringList topics;
+        for (const NtfySubscriptionRecord &subscription : m_database->subscriptions(server.id))
+            topics.append(subscription.topic);
+        NtfyServerConfig config;
+        if (topics.isEmpty() || !serverConfig(server, &config))
+            continue;
+        topics.sort();
+
+        const qint64 serverId = server.id;
+        NtfyPoller *poller = new NtfyPoller(m_nam, this);
+        poller->setServer(config);
+        connect(poller, &NtfyPoller::messageReceived, this, [this, serverId](const NtfyEvent &event) {
+            handleMessage(serverId, event);
+        });
+        connect(poller, &NtfyPoller::finished, this,
+                [this, serverId, poller](bool ok, const QString &, const QString &error) {
+            if (!ok)
+                emit serverError(serverId, error);
+            poller->deleteLater();
+            if (--m_pendingPolls == 0)
+                emit pollFinished();
+        });
+
+        ++m_pendingPolls;
+        const qint64 since = m_database->resumeTime(serverId);
+        poller->poll(topics, since > 0 ? QString::number(since) : QString());
     }
 
-    NtfyServerConfig config;
+    if (m_pendingPolls == 0)
+        emit pollFinished();
+    return true;
+}
+
+bool NtfySubscriptionManager::serverConfig(const NtfyServerRecord &server, NtfyServerConfig *config)
+{
     QByteArray stored;
     bool found = false;
     QString error;
     if (!m_credentials->load(ntfyCredentialKey(server.url), &stored, &found, &error)) {
         // Don't connect without the credentials the user configured.
-        emit serverError(serverId, QStringLiteral("could not read credentials: ") + error);
-        return;
+        emit serverError(server.id, QStringLiteral("could not read credentials: ") + error);
+        return false;
     }
     if (found)
-        ntfyDecodeCredentials(stored, &config);
-    config.baseUrl = server.url;
+        ntfyDecodeCredentials(stored, config);
+    config->baseUrl = server.url;
+    return true;
+}
 
-    Connection connection;
-    connection.subscriptionByTopic = byTopic;
-    connection.stream = new NtfyStream(m_nam, this);
-    connection.stream->setServer(config);
-    connection.stream->setTopics(topics);
+void NtfySubscriptionManager::syncServer(qint64 serverId)
+{
+    const NtfyServerRecord server = m_database->server(serverId);
+    QStringList topics;
+    for (const NtfySubscriptionRecord &subscription : m_database->subscriptions(serverId))
+        topics.append(subscription.topic);
+    topics.sort();
+
+    if (!m_streaming || !server.isValid() || topics.isEmpty()) {
+        dropConnection(serverId);
+        return;
+    }
+
+    if (NtfyStream *stream = m_streams.value(serverId)) {
+        if (stream->topics() != topics) {
+            // Keeps resuming from the stream's last message id.
+            stream->setTopics(topics);
+            stream->reconnectNow();
+        }
+        return;
+    }
+
+    NtfyServerConfig config;
+    if (!serverConfig(server, &config))
+        return;
+
+    NtfyStream *stream = new NtfyStream(m_nam, this);
+    stream->setServer(config);
+    stream->setTopics(topics);
     // Resume by time rather than message id: ids from expired messages are unknown to the server.
     // Messages from that same second come back again, but are already stored and get skipped.
-    const qint64 newest = m_database->newestMessageTime(serverId);
-    if (newest > 0)
-        connection.stream->setSince(QString::number(newest));
+    const qint64 since = m_database->resumeTime(serverId);
+    if (since > 0)
+        stream->setSince(QString::number(since));
 
-    connect(connection.stream, &NtfyStream::messageReceived, this, [this, serverId](const NtfyEvent &event) {
+    connect(stream, &NtfyStream::messageReceived, this, [this, serverId](const NtfyEvent &event) {
         handleMessage(serverId, event);
     });
-    connect(connection.stream, &NtfyStream::stateChanged, this, [this, serverId](NtfyStream::State state) {
+    connect(stream, &NtfyStream::stateChanged, this, [this, serverId](NtfyStream::State state) {
         emit serverStateChanged(serverId, state);
     });
-    connect(connection.stream, &NtfyStream::errorOccurred, this, [this, serverId](const QString &error) {
+    connect(stream, &NtfyStream::errorOccurred, this, [this, serverId](const QString &error) {
         emit serverError(serverId, error);
     });
 
-    m_connections.insert(serverId, connection);
-    connection.stream->start();
+    m_streams.insert(serverId, stream);
+    stream->start();
 }
 
 void NtfySubscriptionManager::dropConnection(qint64 serverId)
 {
-    const auto it = m_connections.find(serverId);
-    if (it == m_connections.end())
+    NtfyStream *stream = m_streams.take(serverId);
+    if (!stream)
         return;
 
-    NtfyStream *stream = it->stream;
-    m_connections.erase(it);
     stream->disconnect(this);
     stream->stop();
     stream->deleteLater();
@@ -282,14 +357,17 @@ void NtfySubscriptionManager::dropConnection(qint64 serverId)
 
 void NtfySubscriptionManager::handleMessage(qint64 serverId, const NtfyEvent &event)
 {
-    const auto it = m_connections.constFind(serverId);
-    if (it == m_connections.constEnd())
-        return;
-    const qint64 subscriptionId = it->subscriptionByTopic.value(event.topic);
-    if (!subscriptionId)
+    NtfySubscriptionRecord subscription;
+    for (const NtfySubscriptionRecord &candidate : m_database->subscriptions(serverId)) {
+        if (candidate.topic == event.topic) {
+            subscription = candidate;
+            break;
+        }
+    }
+    if (!subscription.isValid())
         return;
 
-    const qint64 rowId = m_database->addMessage(subscriptionId, event);
+    const qint64 rowId = m_database->addMessage(subscription.id, event);
     if (rowId < 0) {
         emit serverError(serverId, m_database->lastError());
         return;
@@ -299,7 +377,7 @@ void NtfySubscriptionManager::handleMessage(qint64 serverId, const NtfyEvent &ev
 
     NtfyStoredMessage message;
     message.id = rowId;
-    message.subscriptionId = subscriptionId;
+    message.subscriptionId = subscription.id;
     message.event = event;
-    emit messageReceived(m_database->subscription(subscriptionId), message);
+    emit messageReceived(m_database->subscription(subscription.id), message);
 }

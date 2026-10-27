@@ -13,6 +13,7 @@ BuildRequires:  pkgconfig(Qt5Test)
 BuildRequires:  pkgconfig(Qt5DBus)
 BuildRequires:  pkgconfig(nemonotifications-qt5)
 BuildRequires:  pkgconfig(sailfishsecrets)
+BuildRequires:  pkgconfig(keepalive)
 Requires:       sailfishsecretsdaemon-secretsplugins-default
 Requires:       qt5-plugin-sqldriver-sqlite
 

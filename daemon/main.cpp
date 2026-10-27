@@ -6,17 +6,23 @@
 //
 // Takes no arguments, ever: Sailfish Secrets ties our credentials to our command line.
 
+#include "ntfybackgroundactivityscheduler.h"
 #include "ntfydatabase.h"
 #include "ntfydbusservice.h"
+#include "ntfydeliverycontroller.h"
 #include "ntfynotifier.h"
 #include "ntfysecretscredentialstore.h"
 #include "ntfysubscriptionmanager.h"
 
 #include <QCoreApplication>
 #include <QDBusConnection>
+#include <QLoggingCategory>
 #include <QNetworkAccessManager>
 #include <QNetworkConfigurationManager>
 #include <QStandardPaths>
+
+// Info level on by default: the system-wide logging rules may hide plain qInfo().
+Q_LOGGING_CATEGORY(lcDaemon, "harbour-ntfy.daemon", QtInfoMsg)
 
 int main(int argc, char *argv[])
 {
@@ -25,7 +31,7 @@ int main(int argc, char *argv[])
     QCoreApplication::setApplicationVersion(QStringLiteral(NTFY_VERSION));
 
     if (argc > 1) {
-        qCritical("harbour-ntfy-daemon takes no arguments");
+        qCCritical(lcDaemon, "harbour-ntfy-daemon takes no arguments");
         return 2;
     }
 
@@ -33,14 +39,17 @@ int main(int argc, char *argv[])
             + QStringLiteral("/harbour-ntfy/ntfy.db");
     NtfyDatabase database;
     if (!database.open(databasePath)) {
-        qCritical("could not open database: %s", qPrintable(database.lastError()));
+        qCCritical(lcDaemon, "could not open database: %s", qPrintable(database.lastError()));
         return 1;
     }
 
     NtfySecretsCredentialStore credentials(QStringLiteral("harbourntfydaemon"));
     QNetworkAccessManager nam;
     NtfySubscriptionManager manager(&database, &credentials, &nam);
+    NtfyBackgroundActivityScheduler scheduler;
+    NtfyDeliveryController delivery(&manager, &scheduler);
     NtfyDBusService service(&manager);
+    service.setDeliveryController(&delivery);
 
     NtfyNotifier notifier;
     notifier.setActivationCall(QString::fromLatin1(NtfyDBus::ServiceName), QString::fromLatin1(NtfyDBus::ObjectPath),
@@ -53,15 +62,23 @@ int main(int argc, char *argv[])
 
     // Log server ids only: URLs and topic names are private.
     QObject::connect(&manager, &NtfySubscriptionManager::serverStateChanged, [](qint64 serverId, NtfyStream::State state) {
-        qInfo("server %lld: %s", serverId, qPrintable(NtfyDBusService::stateName(state)));
+        qCInfo(lcDaemon, "server %lld: %s", serverId, qPrintable(NtfyDBusService::stateName(state)));
     });
     QObject::connect(&manager, &NtfySubscriptionManager::serverError, [](qint64 serverId, const QString &error) {
-        qWarning("server %lld: %s", serverId, qPrintable(error));
+        qCWarning(lcDaemon, "server %lld: %s", serverId, qPrintable(error));
+    });
+    QObject::connect(&scheduler, &NtfyWakeupScheduler::wokeUp, [&delivery]() {
+        qCInfo(lcDaemon, "wake-up (%s, every %d s)", qPrintable(NtfyDeliveryController::modeName(delivery.mode())),
+               delivery.interval());
+    });
+    QObject::connect(&delivery, &NtfyDeliveryController::deliveryChanged, [&delivery]() {
+        qCInfo(lcDaemon, "delivery: %s, every %d s", qPrintable(NtfyDeliveryController::modeName(delivery.mode())),
+               delivery.interval());
     });
 
     QString error;
     if (!service.registerOn(QDBusConnection::sessionBus(), &error)) {
-        qCritical("%s", qPrintable(error));
+        qCCritical(lcDaemon, "%s", qPrintable(error));
         return 1;
     }
 
@@ -72,6 +89,8 @@ int main(int argc, char *argv[])
             manager.reconnectAll();
     });
 
-    manager.start();
+    delivery.start();
+    qCInfo(lcDaemon, "started (%s, every %d s)", qPrintable(NtfyDeliveryController::modeName(delivery.mode())),
+           delivery.interval());
     return app.exec();
 }

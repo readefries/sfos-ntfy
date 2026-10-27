@@ -47,6 +47,10 @@ public:
     void setMaxReconnectDelay(int msecs);
 
     State state() const { return m_state; }
+    // Milliseconds since anything (message or keepalive) arrived on the current connection,
+    // or -1 if nothing did yet. A connected stream that's been silent for longer than the
+    // server's keepalive interval is probably dead, e.g. after the phone slept.
+    qint64 msecsSinceLastData() const;
 
 public slots:
     void start();
@@ -82,6 +86,8 @@ private:
     QString m_lastId;
     QByteArray m_buffer;
 
+    // Wall clock on purpose: the monotonic clock (QElapsedTimer) stops while the phone is suspended.
+    qint64 m_lastDataMsecs = 0;
     QTimer m_keepaliveTimer;
     QTimer m_reconnectTimer;
     int m_reconnectDelay;

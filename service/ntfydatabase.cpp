@@ -14,7 +14,7 @@
 
 namespace {
 
-const int SchemaVersion = 1;
+const int SchemaVersion = 2;
 
 QAtomicInt connectionCounter;
 
@@ -126,8 +126,9 @@ bool NtfyDatabase::migrate()
 
     QSqlDatabase db = connection(m_connectionName);
     db.transaction();
-    const bool ok =
-            exec(QStringLiteral(
+    bool ok = true;
+    if (version < 1) {
+        ok = exec(QStringLiteral(
                      "CREATE TABLE servers ("
                      " id INTEGER PRIMARY KEY AUTOINCREMENT,"
                      " url TEXT NOT NULL UNIQUE,"
@@ -150,8 +151,12 @@ bool NtfyDatabase::migrate()
                         " read INTEGER NOT NULL DEFAULT 0,"
                         " event TEXT NOT NULL,"
                         " UNIQUE (subscription_id, message_id))"))
-            && exec(QStringLiteral("CREATE INDEX messages_by_subscription ON messages (subscription_id, id)"))
-            && exec(QStringLiteral("PRAGMA user_version = %1").arg(SchemaVersion));
+            && exec(QStringLiteral("CREATE INDEX messages_by_subscription ON messages (subscription_id, id)"));
+    }
+    if (ok && version < 2) {
+        ok = exec(QStringLiteral("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)"));
+    }
+    ok = ok && exec(QStringLiteral("PRAGMA user_version = %1").arg(SchemaVersion));
     if (!ok) {
         const QString error = m_error;
         db.rollback();
@@ -372,4 +377,43 @@ int NtfyDatabase::pruneMessages(int keepPerSubscription)
         return 0;
     }
     return query.numRowsAffected();
+}
+
+QString NtfyDatabase::setting(const QString &key, const QString &defaultValue) const
+{
+    QSqlQuery query(connection(m_connectionName));
+    query.prepare(QStringLiteral("SELECT value FROM settings WHERE key = ?"));
+    query.addBindValue(key);
+    if (!query.exec()) {
+        fail(QStringLiteral("read setting"), query.lastError().text());
+        return defaultValue;
+    }
+    return query.next() ? query.value(0).toString() : defaultValue;
+}
+
+bool NtfyDatabase::setSetting(const QString &key, const QString &value)
+{
+    QSqlQuery query(connection(m_connectionName));
+    query.prepare(QStringLiteral("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)"));
+    query.addBindValue(key);
+    query.addBindValue(value.isNull() ? QStringLiteral("") : value);
+    if (!query.exec())
+        return fail(QStringLiteral("write setting"), query.lastError().text());
+    return true;
+}
+
+qint64 NtfyDatabase::resumeTime(qint64 serverId) const
+{
+    const qint64 newest = newestMessageTime(serverId);
+    if (newest > 0)
+        return newest;
+
+    QSqlQuery query(connection(m_connectionName));
+    query.prepare(QStringLiteral("SELECT MIN(created) FROM subscriptions WHERE server_id = ?"));
+    query.addBindValue(serverId);
+    if (!query.exec() || !query.next()) {
+        fail(QStringLiteral("resume time"), query.lastError().text());
+        return 0;
+    }
+    return query.value(0).toLongLong();
 }
