@@ -8,6 +8,7 @@
 #include <QDBusContext>
 #include <QObject>
 
+class NtfyActionRunner;
 class NtfyDeliveryController;
 class NtfySubscriptionManager;
 struct NtfySubscriptionRecord;
@@ -32,6 +33,7 @@ public:
     explicit NtfyDBusService(NtfySubscriptionManager *manager, QObject *parent = nullptr);
 
     void setDeliveryController(NtfyDeliveryController *delivery);
+    void setActionRunner(NtfyActionRunner *actions);
 
     // Exports this object and claims the service name. Fails if another daemon already runs.
     bool registerOn(QDBusConnection connection, QString *error = nullptr);
@@ -61,7 +63,11 @@ public slots:
     // delays in seconds between publishing and arrival.
     Q_SCRIPTABLE QString DeliveryStats();
 
-    // Called by lipstick when the user taps one of our notifications.
+    // Runs action button actionIndex of a stored message; only "http" actions run here ("view"
+    // is the UI's business). Replies with the HTTP status once the request is done.
+    Q_SCRIPTABLE int RunAction(qlonglong messageId, int actionIndex);
+
+    // Marks a subscription read. Used to be the notification tap target; taps now open the UI.
     Q_SCRIPTABLE void NotificationActivated(qlonglong subscriptionId);
     Q_SCRIPTABLE void ReconnectAll();
 
@@ -80,6 +86,7 @@ private:
 
     NtfySubscriptionManager *m_manager;
     NtfyDeliveryController *m_delivery = nullptr;
+    NtfyActionRunner *m_actions = nullptr;
 };
 
 #endif // NTFYDBUSSERVICE_H

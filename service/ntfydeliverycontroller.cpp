@@ -112,6 +112,8 @@ void NtfyDeliveryController::start()
 
     m_mode = mode;
     m_interval = intervals(mode).contains(interval) ? interval : defaultInterval(mode);
+    // Before starting: in battery saver mode no stream should be opened, not even briefly.
+    m_manager->setStreaming(m_mode != BatterySaver);
     m_manager->start();
     apply();
 }

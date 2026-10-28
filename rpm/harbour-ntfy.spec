@@ -1,7 +1,7 @@
 Name:       harbour-ntfy
 Summary:    ntfy client for Sailfish OS
 Version:    0.1.0
-Release:    1
+Release:    1%{?dev_suffix}
 License:    AGPLv3+
 URL:        https://github.com/readefries/sfos-ntfy
 Source0:    %{name}-%{version}.tar.bz2
@@ -58,3 +58,4 @@ ln -s ../harbour-ntfy-daemon.service %{buildroot}%{_prefix}/lib/systemd/user/pos
 %{_prefix}/lib/systemd/user/harbour-ntfy-daemon.service
 %{_prefix}/lib/systemd/user/post-user-session.target.wants/harbour-ntfy-daemon.service
 %{_datadir}/dbus-1/services/nl.readefries.harbourntfy.service
+%{_datadir}/dbus-1/services/nl.readefries.harbourntfy.ui.service

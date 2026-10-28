@@ -6,6 +6,7 @@
 #include "ntfydaemonclient.h"
 #include "ntfymessagemodel.h"
 #include "ntfysubscriptionmodel.h"
+#include "ntfyuiservice.h"
 
 #include <sailfishapp.h>
 
@@ -32,8 +33,16 @@ int main(int argc, char *argv[])
     NtfyDaemonClient daemon;
 
     QScopedPointer<QQuickView> view(SailfishApp::createView());
+    NtfyUiService ui(view.data());
+    if (!ui.registerOnSessionBus())
+        qWarning("could not register nl.readefries.harbourntfy.ui, notification taps won't open the app");
+
     view->rootContext()->setContextProperty(QStringLiteral("daemon"), &daemon);
+    view->rootContext()->setContextProperty(QStringLiteral("uiService"), &ui);
     view->setSource(SailfishApp::pathToMainQml());
-    view->show();
+
+    // Started by D-Bus activation (a notification tap): the call that follows shows the window.
+    if (!app->arguments().contains(QStringLiteral("-prestart")))
+        view->show();
     return app->exec();
 }

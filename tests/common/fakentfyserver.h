@@ -19,11 +19,13 @@ public:
         QByteArray headers; // extra header lines, each ending in \r\n
         QList<QByteArray> chunks;
         bool closeAfter = true;
+        bool silent = false; // accept the request but never answer
     };
 
     QList<Response> responses;
     QList<QByteArray> requestLines;
     QList<QByteArray> authHeaders;
+    QList<QByteArray> requests; // complete raw requests, headers and body
 
     QUrl url() const { return QUrl(QStringLiteral("http://127.0.0.1:%1").arg(serverPort())); }
 
@@ -35,20 +37,31 @@ protected:
         connect(socket, &QTcpSocket::readyRead, this, [this, socket]() {
             QByteArray &buffer = m_pending[socket];
             buffer += socket->readAll();
-            if (!buffer.contains("\r\n\r\n"))
+            const int headerEnd = buffer.indexOf("\r\n\r\n");
+            if (headerEnd < 0)
                 return;
 
-            const QList<QByteArray> lines = buffer.split('\n');
-            requestLines.append(lines.first().trimmed());
+            const QList<QByteArray> lines = buffer.left(headerEnd).split('\n');
             QByteArray auth;
+            int contentLength = 0;
             for (const QByteArray &line : lines) {
-                if (line.toLower().startsWith("authorization:"))
+                const QByteArray lower = line.toLower();
+                if (lower.startsWith("authorization:"))
                     auth = line.mid(line.indexOf(':') + 1).trimmed();
+                if (lower.startsWith("content-length:"))
+                    contentLength = line.mid(line.indexOf(':') + 1).trimmed().toInt();
             }
+            if (buffer.size() < headerEnd + 4 + contentLength)
+                return; // wait for the body
+
+            requestLines.append(lines.first().trimmed());
             authHeaders.append(auth);
+            requests.append(buffer);
             m_pending.remove(socket);
 
             const Response response = responses.isEmpty() ? Response() : responses.takeFirst();
+            if (response.silent)
+                return;
             socket->write("HTTP/1.1 " + QByteArray::number(response.status) + " X\r\n"
                           "Content-Type: application/x-ndjson\r\n"
                           + response.headers +

@@ -5,6 +5,9 @@ Name=ntfy
 Comment=Push notifications from ntfy servers
 Icon=harbour-ntfy
 Exec=harbour-ntfy
+# Notification taps call this (see nl.readefries.harbourntfy.ui.service); Sailjail lets the app own it.
+X-Maemo-Service=nl.readefries.harbourntfy.ui
+X-Maemo-Object-Path=/
 
 [X-Sailjail]
 # The UI only talks to harbour-ntfy-daemon. Owning OrganizationName.ApplicationName on D-Bus

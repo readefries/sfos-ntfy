@@ -37,6 +37,10 @@ sfdk build ..                     # -> build-aarch64/RPMS/harbour-ntfy-*.aarch64
 Run `sfdk` from a path under the SDK workspace as the SDK sees it (`/home/...`, not
 `/var/home/...` on Fedora Atomic), or it refuses to build.
 
+`scripts/deploy.sh` does that and copies the RPM to the phone (ssh host `sailfish` by default). Each of
+its builds gets a unique release (`…dev<time>.g<commit>`), so `pkcon install-local` never skips it as
+already installed.
+
 `sfdk build` also runs the test suite (`%check` in the spec) against the target's Qt 5.6,
 emulated for ARM targets. Pass `--no-check` to skip it.
 

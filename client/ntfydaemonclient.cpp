@@ -131,6 +131,23 @@ void NtfyDaemonClient::setDelivery(const QString &mode, int intervalSeconds)
     callThen(QStringLiteral("SetDelivery"), QVariantList() << mode << intervalSeconds, nullptr);
 }
 
+void NtfyDaemonClient::runAction(qlonglong messageId, int actionIndex)
+{
+    // Not via callThen(): a failing action is reported as its own result, not as a client error.
+    QDBusPendingCallWatcher *watcher =
+            new QDBusPendingCallWatcher(call(QStringLiteral("RunAction"), QVariantList() << messageId << actionIndex), this);
+    connect(watcher, &QDBusPendingCallWatcher::finished, this,
+            [this, messageId, actionIndex](QDBusPendingCallWatcher *watcher) {
+        watcher->deleteLater();
+        const QDBusMessage reply = watcher->reply();
+        if (reply.type() == QDBusMessage::ErrorMessage)
+            emit actionFinished(messageId, actionIndex, false, reply.errorMessage());
+        else
+            emit actionFinished(messageId, actionIndex, true,
+                                QStringLiteral("HTTP %1").arg(reply.arguments().value(0).toInt()));
+    });
+}
+
 void NtfyDaemonClient::fetchSubscriptions()
 {
     callThen(QStringLiteral("Subscriptions"), QVariantList(), [this](const QVariant &json) {

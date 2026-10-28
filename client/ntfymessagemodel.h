@@ -29,6 +29,11 @@ public:
         ClickRole,
         AttachmentNameRole,
         AttachmentUrlRole,
+        AttachmentTypeRole,
+        AttachmentSizeRole,
+        AttachmentExpiredRole, // files hosted by ntfy are deleted after a while
+        // [{"action", "label", "url", "method"}] for the action buttons
+        ActionsRole,
         ReadRole
     };
     Q_ENUM(Roles)

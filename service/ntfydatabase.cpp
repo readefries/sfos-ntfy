@@ -340,6 +340,25 @@ QList<NtfyStoredMessage> NtfyDatabase::messages(qint64 subscriptionId, int limit
     return result;
 }
 
+NtfyStoredMessage NtfyDatabase::message(qint64 messageId) const
+{
+    NtfyStoredMessage message;
+    QSqlQuery query(connection(m_connectionName));
+    query.prepare(QStringLiteral("SELECT subscription_id, read, event FROM messages WHERE id = ?"));
+    query.addBindValue(messageId);
+    if (!query.exec()) {
+        fail(QStringLiteral("read message"), query.lastError().text());
+        return message;
+    }
+    if (query.next()) {
+        message.id = messageId;
+        message.subscriptionId = query.value(0).toLongLong();
+        message.read = query.value(1).toInt() != 0;
+        message.event = NtfyEvent::fromJson(query.value(2).toByteArray());
+    }
+    return message;
+}
+
 bool NtfyDatabase::markRead(qint64 subscriptionId)
 {
     QSqlQuery query(connection(m_connectionName));

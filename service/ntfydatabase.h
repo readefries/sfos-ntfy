@@ -77,6 +77,8 @@ public:
     qint64 addMessage(qint64 subscriptionId, const NtfyEvent &message);
     // Newest first. Pass the id of the oldest message you have as beforeId to page further back.
     QList<NtfyStoredMessage> messages(qint64 subscriptionId, int limit, qint64 beforeId = 0) const;
+    // One stored message by its row id; invalid if there's no such message.
+    NtfyStoredMessage message(qint64 messageId) const;
     bool markRead(qint64 subscriptionId);
     // ntfy timestamp of the newest stored message of a server, or 0. Used to resume with since=.
     qint64 newestMessageTime(qint64 serverId) const;

@@ -153,6 +153,26 @@ QVariant NtfyMessageModel::data(const QModelIndex &index, int role) const
         return event.attachment.name;
     case AttachmentUrlRole:
         return event.attachment.url;
+    case AttachmentTypeRole:
+        return event.attachment.type;
+    case AttachmentSizeRole:
+        return event.attachment.size;
+    case AttachmentExpiredRole:
+        return event.attachment.expires > 0
+                && event.attachment.expires < QDateTime::currentMSecsSinceEpoch() / 1000;
+    case ActionsRole: {
+        QVariantList actions;
+        for (const NtfyAction &action : event.actions) {
+            QVariantMap map;
+            map.insert(QStringLiteral("action"), action.action);
+            map.insert(QStringLiteral("label"), action.label);
+            map.insert(QStringLiteral("url"), action.url);
+            map.insert(QStringLiteral("method"), action.method.isEmpty() ? QStringLiteral("POST")
+                                                                         : action.method.toUpper());
+            actions.append(map);
+        }
+        return actions;
+    }
     case ReadRole:
         return item.read;
     }
@@ -171,6 +191,10 @@ QHash<int, QByteArray> NtfyMessageModel::roleNames() const
     roles.insert(ClickRole, "click");
     roles.insert(AttachmentNameRole, "attachmentName");
     roles.insert(AttachmentUrlRole, "attachmentUrl");
+    roles.insert(AttachmentTypeRole, "attachmentType");
+    roles.insert(AttachmentSizeRole, "attachmentSize");
+    roles.insert(AttachmentExpiredRole, "attachmentExpired");
+    roles.insert(ActionsRole, "actions");
     roles.insert(ReadRole, "read");
     return roles;
 }

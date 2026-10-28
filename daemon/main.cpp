@@ -6,6 +6,7 @@
 //
 // Takes no arguments, ever: Sailfish Secrets ties our credentials to our command line.
 
+#include "ntfyactionrunner.h"
 #include "ntfybackgroundactivityscheduler.h"
 #include "ntfydatabase.h"
 #include "ntfydbusservice.h"
@@ -50,10 +51,14 @@ int main(int argc, char *argv[])
     NtfyDeliveryController delivery(&manager, &scheduler);
     NtfyDBusService service(&manager);
     service.setDeliveryController(&delivery);
+    NtfyActionRunner actions(&nam);
+    service.setActionRunner(&actions);
 
     NtfyNotifier notifier;
-    notifier.setActivationCall(QString::fromLatin1(NtfyDBus::ServiceName), QString::fromLatin1(NtfyDBus::ObjectPath),
-                               QString::fromLatin1(NtfyDBus::Interface), QStringLiteral("NotificationActivated"));
+    // Taps open the UI at the subscription (D-Bus activation starts it if needed, see
+    // app/nl.readefries.harbourntfy.ui.service); the UI marks it read.
+    notifier.setActivationCall(QStringLiteral("nl.readefries.harbourntfy.ui"), QStringLiteral("/"),
+                               QStringLiteral("nl.readefries.harbourntfy.ui"), QStringLiteral("openSubscription"));
     QObject::connect(&manager, &NtfySubscriptionManager::messageReceived, &notifier,
                      [&notifier](const NtfySubscriptionRecord &subscription, const NtfyStoredMessage &message) {
         if (!subscription.muted)

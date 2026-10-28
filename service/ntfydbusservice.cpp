@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "ntfydbusservice.h"
 
+#include "ntfyactionrunner.h"
 #include "ntfydeliverycontroller.h"
 #include "ntfysubscriptionmanager.h"
 
 #include <QDBusConnectionInterface>
 #include <QDBusError>
+#include <QDBusMessage>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -65,6 +67,11 @@ void NtfyDBusService::setDeliveryController(NtfyDeliveryController *delivery)
     m_delivery = delivery;
     if (m_delivery)
         connect(m_delivery, &NtfyDeliveryController::deliveryChanged, this, &NtfyDBusService::DeliveryChanged);
+}
+
+void NtfyDBusService::setActionRunner(NtfyActionRunner *actions)
+{
+    m_actions = actions;
 }
 
 bool NtfyDBusService::registerOn(QDBusConnection connection, QString *error)
@@ -252,6 +259,32 @@ QString NtfyDBusService::DeliveryStats()
     obj.insert(QStringLiteral("averageDelay"), stats.messages ? double(stats.totalDelay) / stats.messages : 0.0);
     obj.insert(QStringLiteral("maxDelay"), double(stats.maxDelay));
     return QString::fromUtf8(QJsonDocument(obj).toJson(QJsonDocument::Compact));
+}
+
+int NtfyDBusService::RunAction(qlonglong messageId, int actionIndex)
+{
+    const NtfyStoredMessage message = m_manager->database()->message(messageId);
+    if (!message.isValid() || actionIndex < 0 || actionIndex >= message.event.actions.size()) {
+        replyError(QStringLiteral("no such action"));
+        return 0;
+    }
+    const NtfyAction action = message.event.actions.at(actionIndex);
+    QString error;
+    if (!m_actions || !NtfyActionRunner::canRun(action, &error)) {
+        replyError(error.isEmpty() ? QStringLiteral("actions are not available") : error);
+        return 0;
+    }
+    if (!calledFromDBus())
+        return 0;
+
+    // Answer when the request is done, without blocking the daemon meanwhile.
+    setDelayedReply(true);
+    const QDBusMessage request = QDBusContext::message();
+    QDBusConnection bus = connection();
+    m_actions->run(action, [request, bus](bool ok, int status, const QString &error) mutable {
+        bus.send(ok ? request.createReply(status) : request.createErrorReply(QDBusError::Failed, error));
+    });
+    return 0;
 }
 
 void NtfyDBusService::NotificationActivated(qlonglong subscriptionId)

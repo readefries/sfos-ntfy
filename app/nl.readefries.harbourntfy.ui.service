@@ -1,0 +1,3 @@
+[D-BUS Service]
+Name=nl.readefries.harbourntfy.ui
+Exec=/usr/bin/sailjail -p harbour-ntfy.desktop /usr/bin/harbour-ntfy -prestart

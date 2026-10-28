@@ -14,6 +14,27 @@ Page {
         client: daemon
     }
 
+    function openLink(url, label) {
+        var dialog = pageStack.push(Qt.resolvedUrl("OpenLinkDialog.qml"), { url: url, label: label || "" })
+        dialog.accepted.connect(function() { Qt.openUrlExternally(url) })
+    }
+
+    function runAction(rowId, index, action) {
+        if (action.action === "view") {
+            openLink(action.url, action.label)
+            return
+        }
+        var dialog = pageStack.push(Qt.resolvedUrl("OpenLinkDialog.qml"),
+                                    { url: action.url, label: action.label, mode: "send", method: action.method })
+        dialog.accepted.connect(function() { daemon.runAction(rowId, index) })
+    }
+
+    Connections {
+        target: daemon
+        onActionFinished: Notices.show(ok ? qsTr("Sent (%1)").arg(result) : qsTr("Failed: %1").arg(result),
+                                       Notice.Short, Notice.Center)
+    }
+
     // Whatever is on screen counts as read.
     onStatusChanged: {
         if (status === PageStatus.Active)
@@ -56,12 +77,25 @@ Page {
 
         delegate: ListItem {
             id: item
+
+            readonly property var actionList: model.actions
+            readonly property var rowId: model.rowId
             contentHeight: column.height + 2 * Theme.paddingMedium
+            // Tapping a message follows its link, like the notification would on other platforms.
+            onClicked: {
+                if (model.click.length > 0)
+                    openLink(model.click, "")
+            }
 
             menu: ContextMenu {
                 MenuItem {
                     text: qsTr("Copy text")
                     onClicked: Clipboard.text = model.title.length > 0 ? model.title + "\n" + model.body : model.body
+                }
+                MenuItem {
+                    visible: model.click.length > 0
+                    text: qsTr("Copy link")
+                    onClicked: Clipboard.text = model.click
                 }
             }
 
@@ -102,6 +136,53 @@ Page {
                     textFormat: Text.PlainText
                     color: item.highlighted ? Theme.highlightColor : Theme.primaryColor
                 }
+                BackgroundItem {
+                    id: attachment
+                    visible: model.attachmentUrl.length > 0
+                    width: parent.width
+                    height: attachmentLabel.height + 2 * Theme.paddingSmall
+                    enabled: !model.attachmentExpired
+                    onClicked: openLink(model.attachmentUrl, model.attachmentName)
+
+                    Label {
+                        id: attachmentLabel
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: parent.width
+                        text: "📎 " + (model.attachmentName.length > 0 ? model.attachmentName : qsTr("Attachment"))
+                              + (model.attachmentSize > 0 ? " · " + Format.formatFileSize(model.attachmentSize) : "")
+                              + (model.attachmentExpired ? " · " + qsTr("expired") : "")
+                        truncationMode: TruncationMode.Fade
+                        font.pixelSize: Theme.fontSizeSmall
+                        color: model.attachmentExpired ? Theme.secondaryColor
+                                                       : (attachment.highlighted ? Theme.highlightColor
+                                                                                 : Theme.secondaryHighlightColor)
+                    }
+                }
+
+                Flow {
+                    width: parent.width
+                    spacing: Theme.paddingMedium
+                    visible: actionRepeater.count > 0
+
+                    Repeater {
+                        id: actionRepeater
+                        // "broadcast" actions are for Android intents.
+                        model: {
+                            var actions = []
+                            for (var i = 0; i < item.actionList.length; ++i) {
+                                if (item.actionList[i].action === "view" || item.actionList[i].action === "http")
+                                    actions.push({ index: i, action: item.actionList[i] })
+                            }
+                            return actions
+                        }
+                        Button {
+                            text: modelData.action.label
+                            preferredWidth: Theme.buttonWidthSmall
+                            onClicked: runAction(item.rowId, modelData.index, modelData.action)
+                        }
+                    }
+                }
+
                 Label {
                     width: parent.width
                     text: Format.formatDate(model.time, Formatter.TimepointRelative)

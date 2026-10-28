@@ -29,6 +29,8 @@ public:
     Q_INVOKABLE void markRead(qlonglong subscriptionId);
     Q_INVOKABLE void removeServer(qlonglong serverId);
     Q_INVOKABLE void setDelivery(const QString &mode, int intervalSeconds);
+    // Has the daemon perform an "http" action button. Emits actionFinished().
+    Q_INVOKABLE void runAction(qlonglong messageId, int actionIndex);
 
     // Results arrive through the *Loaded signals.
     Q_INVOKABLE void fetchSubscriptions();
@@ -43,6 +45,7 @@ signals:
     void deliveryLoaded(const QJsonObject &delivery);
 
     void subscribed(qlonglong subscriptionId);
+    void actionFinished(qlonglong messageId, int actionIndex, bool ok, const QString &result);
     void failed(const QString &error);
 
     // Forwarded from the daemon.
