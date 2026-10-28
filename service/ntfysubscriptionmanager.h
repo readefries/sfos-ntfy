@@ -52,6 +52,8 @@ public:
 
     // Disconnected for servers without subscriptions.
     NtfyStream::State serverState(qint64 serverId) const;
+    // The most recent error for a server, until it connects (or polls) successfully again.
+    QString lastError(qint64 serverId) const { return m_lastErrors.value(serverId); }
     // Every stream is connected (trivially true without streams).
     bool allConnected() const;
     // Reconnects streams that aren't connected, or have been silent for longer than
@@ -83,6 +85,7 @@ private:
     NtfyCredentialStore *m_credentials;
     QNetworkAccessManager *m_nam;
     QHash<qint64, NtfyStream *> m_streams;
+    QHash<qint64, QString> m_lastErrors;
     int m_pendingPolls = 0;
     bool m_started = false;
     bool m_streaming = true;

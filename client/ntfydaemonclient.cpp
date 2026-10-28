@@ -41,6 +41,8 @@ void NtfyDaemonClient::connectSignals()
                          this, SIGNAL(deliveryChanged()));
     m_connection.connect(ServiceName, ObjectPath, Interface, QStringLiteral("ServerError"),
                          this, SIGNAL(serverError(qlonglong,QString)));
+    m_connection.connect(ServiceName, ObjectPath, Interface, QStringLiteral("ServerStateChanged"),
+                         this, SIGNAL(serverStateChanged(qlonglong,QString)));
     m_connection.connect(ServiceName, ObjectPath, Interface, QStringLiteral("MessageReceived"),
                          this, SLOT(onMessageReceived(qlonglong,QString)));
 }
@@ -126,6 +128,13 @@ void NtfyDaemonClient::removeServer(qlonglong serverId)
     callThen(QStringLiteral("RemoveServer"), QVariantList() << serverId, nullptr);
 }
 
+void NtfyDaemonClient::updateServer(const QString &serverUrl, const QString &token, const QString &username,
+                                    const QString &password)
+{
+    callThen(QStringLiteral("AddServer"), QVariantList() << serverUrl << token << username << password,
+             [this](const QVariant &serverId) { emit serverUpdated(serverId.toLongLong()); });
+}
+
 void NtfyDaemonClient::setDelivery(const QString &mode, int intervalSeconds)
 {
     callThen(QStringLiteral("SetDelivery"), QVariantList() << mode << intervalSeconds, nullptr);
@@ -158,7 +167,7 @@ void NtfyDaemonClient::fetchSubscriptions()
 void NtfyDaemonClient::fetchServers()
 {
     callThen(QStringLiteral("Servers"), QVariantList(), [this](const QVariant &json) {
-        emit serversLoaded(parseArray(json));
+        emit serversLoaded(parseArray(json).toVariantList());
     });
 }
 
@@ -173,6 +182,13 @@ void NtfyDaemonClient::fetchMessages(qlonglong subscriptionId, int limit, qlongl
 void NtfyDaemonClient::fetchDelivery()
 {
     callThen(QStringLiteral("Delivery"), QVariantList(), [this](const QVariant &json) {
-        emit deliveryLoaded(QJsonDocument::fromJson(json.toString().toUtf8()).object());
+        emit deliveryLoaded(QJsonDocument::fromJson(json.toString().toUtf8()).object().toVariantMap());
+    });
+}
+
+void NtfyDaemonClient::fetchDeliveryStats()
+{
+    callThen(QStringLiteral("DeliveryStats"), QVariantList(), [this](const QVariant &json) {
+        emit deliveryStatsLoaded(QJsonDocument::fromJson(json.toString().toUtf8()).object().toVariantMap());
     });
 }

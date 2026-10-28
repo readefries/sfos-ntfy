@@ -22,6 +22,8 @@ DISTFILES += \
     harbour-ntfy.desktop \
     nl.readefries.harbourntfy.ui.service \
     qml/pages/OpenLinkDialog.qml \
+    qml/pages/ServerLoginDialog.qml \
+    qml/pages/SettingsPage.qml \
     qml/harbour-ntfy.qml \
     qml/cover/CoverPage.qml \
     qml/pages/AddSubscriptionDialog.qml \

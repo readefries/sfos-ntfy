@@ -5,7 +5,10 @@ Name=ntfy
 Comment=Push notifications from ntfy servers
 Icon=harbour-ntfy
 Exec=harbour-ntfy
-# Notification taps call this (see nl.readefries.harbourntfy.ui.service); Sailjail lets the app own it.
+# With X-Maemo-Service the launcher starts the app through D-Bus activation of this name (see
+# nl.readefries.harbourntfy.ui.service) and calls com.nokia.MApplicationIf.launch on /org/maemo/m,
+# which shows the window. Notification taps call openSubscription on /. Declaring the service here
+# is also what lets the sandboxed app own the name.
 X-Maemo-Service=nl.readefries.harbourntfy.ui
 X-Maemo-Object-Path=/
 

@@ -17,6 +17,10 @@ Page {
 
         PullDownMenu {
             MenuItem {
+                text: qsTr("Settings")
+                onClicked: pageStack.push(Qt.resolvedUrl("SettingsPage.qml"))
+            }
+            MenuItem {
                 text: qsTr("Add subscription")
                 onClicked: pageStack.push(Qt.resolvedUrl("AddSubscriptionDialog.qml"))
             }

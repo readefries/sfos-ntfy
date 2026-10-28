@@ -55,6 +55,8 @@ int main(int argc, char *argv[])
     service.setActionRunner(&actions);
 
     NtfyNotifier notifier;
+    notifier.setAppName(QStringLiteral("ntfy"));
+    notifier.setAppIcon(QStringLiteral("/usr/share/icons/hicolor/86x86/apps/harbour-ntfy.png"));
     // Taps open the UI at the subscription (D-Bus activation starts it if needed, see
     // app/nl.readefries.harbourntfy.ui.service); the UI marks it read.
     notifier.setActivationCall(QStringLiteral("nl.readefries.harbourntfy.ui"), QStringLiteral("/"),

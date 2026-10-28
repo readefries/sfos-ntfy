@@ -142,6 +142,7 @@ QString NtfyDBusService::Servers()
         obj.insert(QStringLiteral("id"), double(server.id));
         obj.insert(QStringLiteral("url"), server.url.toString());
         obj.insert(QStringLiteral("state"), stateName(m_manager->serverState(server.id)));
+        obj.insert(QStringLiteral("error"), m_manager->lastError(server.id));
         array.append(obj);
     }
     return toString(array);
@@ -213,18 +214,21 @@ QString NtfyDBusService::Delivery()
     }
 
     QJsonObject options;
+    QJsonObject defaults;
     for (NtfyDeliveryController::Mode mode : {NtfyDeliveryController::Instant, NtfyDeliveryController::Balanced,
                                               NtfyDeliveryController::BatterySaver}) {
         QJsonArray seconds;
         for (int interval : NtfyDeliveryController::intervals(mode))
             seconds.append(interval);
         options.insert(NtfyDeliveryController::modeName(mode), seconds);
+        defaults.insert(NtfyDeliveryController::modeName(mode), NtfyDeliveryController::defaultInterval(mode));
     }
 
     QJsonObject obj;
     obj.insert(QStringLiteral("mode"), NtfyDeliveryController::modeName(m_delivery->mode()));
     obj.insert(QStringLiteral("interval"), m_delivery->interval());
     obj.insert(QStringLiteral("options"), options);
+    obj.insert(QStringLiteral("defaults"), defaults);
     return QString::fromUtf8(QJsonDocument(obj).toJson(QJsonDocument::Compact));
 }
 

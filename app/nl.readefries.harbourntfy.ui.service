@@ -1,3 +1,6 @@
 [D-BUS Service]
 Name=nl.readefries.harbourntfy.ui
-Exec=/usr/bin/sailjail -p harbour-ntfy.desktop /usr/bin/harbour-ntfy -prestart
+# How the launcher starts sandboxed apps, minus --single-instance: a copy started for a notification
+# tap must not hold the launcher's single-instance lock. -prestart keeps it hidden until asked.
+# (Not "invoker -A" like Jolla's own apps: that fails for sandboxed third-party apps.)
+Exec=/usr/bin/invoker --type=silica-qt5 --id=harbour-ntfy /usr/bin/harbour-ntfy -prestart

@@ -44,7 +44,7 @@ public slots:
     Q_SCRIPTABLE qlonglong AddServer(const QString &url, const QString &token, const QString &username,
                                      const QString &password);
     Q_SCRIPTABLE void RemoveServer(qlonglong serverId);
-    // [{"id", "url", "state"}]
+    // [{"id", "url", "state", "error"}], error being the last one while not connected
     Q_SCRIPTABLE QString Servers();
 
     Q_SCRIPTABLE qlonglong AddSubscription(qlonglong serverId, const QString &topic, const QString &displayName);
@@ -56,7 +56,8 @@ public slots:
     // Newest first: [{"id", "read", "event"}], "event" in the ntfy JSON format.
     Q_SCRIPTABLE QString Messages(qlonglong subscriptionId, int limit, qlonglong beforeId);
 
-    // {"mode", "interval", "options": {"instant": [seconds, ...], "balanced": [...], "battery-saver": [...]}}
+    // {"mode", "interval", "options": {"instant": [seconds, ...], "balanced": [...], "battery-saver": [...]},
+    //  "defaults": {"instant": seconds, ...}}
     Q_SCRIPTABLE QString Delivery();
     Q_SCRIPTABLE void SetDelivery(const QString &mode, int intervalSeconds);
     // Since the daemon started: {"wakeups", "lastWakeup", "messages", "averageDelay", "maxDelay"},

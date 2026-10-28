@@ -28,6 +28,9 @@ public:
     Q_INVOKABLE void setMuted(qlonglong subscriptionId, bool muted);
     Q_INVOKABLE void markRead(qlonglong subscriptionId);
     Q_INVOKABLE void removeServer(qlonglong serverId);
+    // Replaces a server's login; all empty removes it. Emits serverUpdated() or failed().
+    Q_INVOKABLE void updateServer(const QString &serverUrl, const QString &token, const QString &username,
+                                  const QString &password);
     Q_INVOKABLE void setDelivery(const QString &mode, int intervalSeconds);
     // Has the daemon perform an "http" action button. Emits actionFinished().
     Q_INVOKABLE void runAction(qlonglong messageId, int actionIndex);
@@ -37,14 +40,18 @@ public:
     Q_INVOKABLE void fetchServers();
     Q_INVOKABLE void fetchMessages(qlonglong subscriptionId, int limit, qlonglong beforeId);
     Q_INVOKABLE void fetchDelivery();
+    Q_INVOKABLE void fetchDeliveryStats();
 
 signals:
     void subscriptionsLoaded(const QJsonArray &subscriptions);
-    void serversLoaded(const QJsonArray &servers);
     void messagesLoaded(qlonglong subscriptionId, qlonglong beforeId, const QJsonArray &messages);
-    void deliveryLoaded(const QJsonObject &delivery);
+    // For QML, hence plain variants.
+    void serversLoaded(const QVariantList &servers);
+    void deliveryLoaded(const QVariantMap &delivery);
+    void deliveryStatsLoaded(const QVariantMap &stats);
 
     void subscribed(qlonglong subscriptionId);
+    void serverUpdated(qlonglong serverId);
     void actionFinished(qlonglong messageId, int actionIndex, bool ok, const QString &result);
     void failed(const QString &error);
 
@@ -53,6 +60,7 @@ signals:
     void messageReceived(qlonglong subscriptionId, const QJsonObject &message);
     void deliveryChanged();
     void serverError(qlonglong serverId, const QString &error);
+    void serverStateChanged(qlonglong serverId, const QString &state);
 
 private slots:
     void onMessageReceived(qlonglong subscriptionId, const QString &message);

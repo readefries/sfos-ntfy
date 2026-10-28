@@ -20,6 +20,14 @@ NtfySubscriptionManager::NtfySubscriptionManager(NtfyDatabase *database, NtfyCre
 {
     qRegisterMetaType<NtfySubscriptionRecord>();
     qRegisterMetaType<NtfyStoredMessage>();
+
+    connect(this, &NtfySubscriptionManager::serverError, this, [this](qint64 serverId, const QString &error) {
+        m_lastErrors.insert(serverId, error);
+    });
+    connect(this, &NtfySubscriptionManager::serverStateChanged, this, [this](qint64 serverId, NtfyStream::State state) {
+        if (state == NtfyStream::Connected)
+            m_lastErrors.remove(serverId);
+    });
 }
 
 NtfySubscriptionManager::~NtfySubscriptionManager()
@@ -104,8 +112,9 @@ qint64 NtfySubscriptionManager::addServer(const QUrl &url, const QString &token,
         return 0;
     }
 
-    // New credentials for a connected server take effect right away.
-    if (m_started && m_streams.contains(serverId)) {
+    m_lastErrors.remove(serverId);
+    // New credentials take effect right away, also for a stream that gave up after a 401.
+    if (m_started) {
         dropConnection(serverId);
         syncServer(serverId);
     }
@@ -133,6 +142,7 @@ bool NtfySubscriptionManager::removeServer(qint64 serverId, QString *error)
         return false;
     }
 
+    m_lastErrors.remove(serverId);
     if (!m_database->removeServer(serverId)) {
         if (error)
             *error = m_database->lastError();
@@ -261,7 +271,9 @@ bool NtfySubscriptionManager::pollAll()
         });
         connect(poller, &NtfyPoller::finished, this,
                 [this, serverId, poller](bool ok, const QString &, const QString &error) {
-            if (!ok)
+            if (ok)
+                m_lastErrors.remove(serverId);
+            else
                 emit serverError(serverId, error);
             poller->deleteLater();
             if (--m_pendingPolls == 0)

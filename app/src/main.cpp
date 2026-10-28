@@ -15,6 +15,7 @@
 #include <QQmlEngine>
 #include <QQuickView>
 #include <QScopedPointer>
+#include <QTimer>
 
 int main(int argc, char *argv[])
 {
@@ -34,15 +35,31 @@ int main(int argc, char *argv[])
 
     QScopedPointer<QQuickView> view(SailfishApp::createView());
     NtfyUiService ui(view.data());
-    if (!ui.registerOnSessionBus())
+    const bool prestart = app->arguments().contains(QStringLiteral("-prestart"));
+    if (!ui.registerOnSessionBus()) {
+        // Single instance: a copy started from the launcher while one runs (possibly hidden, having
+        // been started for a notification tap) brings that one to the front instead.
+        if (NtfyUiService::otherInstanceRunning()) {
+            if (!prestart)
+                NtfyUiService::activateOtherInstance();
+            return 0;
+        }
         qWarning("could not register nl.readefries.harbourntfy.ui, notification taps won't open the app");
+    }
 
     view->rootContext()->setContextProperty(QStringLiteral("daemon"), &daemon);
     view->rootContext()->setContextProperty(QStringLiteral("uiService"), &ui);
     view->setSource(SailfishApp::pathToMainQml());
 
     // Started by D-Bus activation (a notification tap): the call that follows shows the window.
-    if (!app->arguments().contains(QStringLiteral("-prestart")))
+    // Should it never come, don't linger invisibly.
+    if (prestart) {
+        QTimer::singleShot(30 * 1000, app.data(), [&view]() {
+            if (!view->isVisible())
+                QCoreApplication::quit();
+        });
+    } else {
         view->show();
+    }
     return app->exec();
 }
