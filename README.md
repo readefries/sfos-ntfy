@@ -77,8 +77,25 @@ curl -d "Hello from curl" ntfy.sh/mytopic             # publish something to see
 Commits follow [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `ci:`,
 ...). After every green build on `main`, CI runs [semantic-release](https://semantic-release.gitbook.io/):
 it picks the next version from the commits since the last `vX.Y.Z` tag (`fix:` patch, `feat:` minor,
-`BREAKING CHANGE:` major) and creates that tag plus a GitHub release with the notes. It commits
-nothing; the version in the spec is a placeholder that OBS replaces with the tag's.
+`BREAKING CHANGE:` major), builds the RPMs for aarch64, armv7hl and i486 with that version, and
+creates the tag plus a GitHub release with the notes, the RPMs, `SHA256SUMS` and a build provenance
+attestation. It commits nothing; the version in the spec is a placeholder that release builds (and
+OBS) replace with the tag's.
+
+### Installing a release from GitHub
+
+Download `harbour-ntfy-<version>-1.<arch>.rpm` for your device (`uname -m`: `aarch64` on recent
+devices) and check where it came from before installing it:
+
+```sh
+sha256sum -c --ignore-missing SHA256SUMS
+gh attestation verify harbour-ntfy-<version>-1.aarch64.rpm -R readefries/sfos-ntfy  # built here, by CI
+devel-su pkcon install-local ./harbour-ntfy-<version>-1.aarch64.rpm
+```
+
+Packages installed this way don't update by themselves. Note that zypper sticks to a package's
+vendor: once installed from GitHub, the SailfishOS:Chum package (vendor `chum`) won't replace it
+automatically; uninstall it first if you switch to Chum.
 
 Releases can't be changed afterwards: the repository has GitHub's immutable releases enabled (with
 release attestations) and a ruleset that lets `v*` tags be created but not moved or deleted.
