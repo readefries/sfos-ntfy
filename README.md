@@ -72,6 +72,47 @@ NTFY_TOKEN=tk_... harbour-ntfy-cli -s https://ntfy.example.com alerts,backups
 curl -d "Hello from curl" ntfy.sh/mytopic             # publish something to see it arrive
 ```
 
+## Releasing
+
+Commits follow [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `ci:`,
+...). After every green build on `main`, CI runs [semantic-release](https://semantic-release.gitbook.io/):
+it picks the next version from the commits since the last `vX.Y.Z` tag (`fix:` patch, `feat:` minor,
+`BREAKING CHANGE:` major) and creates that tag plus a GitHub release with the notes. It commits
+nothing; the version in the spec is a placeholder that OBS replaces with the tag's.
+
+Releases can't be changed afterwards: the repository has GitHub's immutable releases enabled (with
+release attestations) and a ruleset that lets `v*` tags be created but not moved or deleted.
+
+### SailfishOS:Chum
+
+Packages for [SailfishOS:Chum](https://github.com/sailfishos-chum/main#readme) are built from source
+on the [Sailfish OS OBS](https://build.sailfishos.org/):
+
+1. In your home project, create the package `harbour-ntfy` with this `_service` file. `revision` is
+   the **commit hash** of the release, so OBS builds exactly that code even if a tag ever moved;
+   `tar_git` still takes the version from the tag on that commit.
+   ```xml
+   <services>
+     <!-- v0.1.0 -->
+     <service name="tar_git">
+       <param name="url">https://github.com/readefries/sfos-ntfy.git</param>
+       <param name="branch">main</param>
+       <param name="revision">COMMIT-HASH-OF-THE-RELEASE</param>
+     </service>
+   </services>
+   ```
+   Get the hash with `git rev-parse vX.Y.Z^{commit}` and check it against the release's attestation
+   on GitHub.
+2. Add build targets for the supported Sailfish OS releases and architectures in the project's
+   meta configuration (see Chum's [Getting Started](https://github.com/sailfishos-chum/main/blob/main/GettingStarted.md)),
+   and check that it builds, tests included.
+3. "Submit package" to `sailfishos:chum:testing`. Its maintainers promote it to `sailfishos:chum`.
+4. Later releases: update the hash (and comment) in `_service` at `sailfishos:chum:testing`, check
+   the build, then "Submit package" to `sailfishos:chum`.
+
+The Chum metadata (title, icon, links, AI use) is the last paragraph of `%description` in
+`rpm/harbour-ntfy.spec`.
+
 ## License
 
 AGPL-3.0-or-later, see [LICENSE](LICENSE).
