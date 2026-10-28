@@ -25,6 +25,11 @@ jobs:
       # %check in the spec runs the Qt tests.
       - name: Build RPM and run tests
         run: scripts/docker-build.sh ${{ matrix.release }} ${{ matrix.arch }}
+        env:
+          # The SDK's scratchbox2 can't start its daemon under the runner's default container
+          # restrictions ("sb2d: Failed to create server socket"); the community action
+          # (CODeRUS/github-sfos-build) runs privileged for the same reason.
+          DOCKER_RUN_ARGS: --privileged
 
       - uses: actions/upload-artifact@v4
         with:
