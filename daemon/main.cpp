@@ -17,14 +17,51 @@
 #include "ntfysubscriptionmanager.h"
 
 #include <QCoreApplication>
+#include <QSocketNotifier>
 #include <QDBusConnection>
 #include <QLoggingCategory>
 #include <QNetworkAccessManager>
 #include <QNetworkConfigurationManager>
 #include <QStandardPaths>
 
+#include <signal.h>
+#include <unistd.h>
+
 // Info level on by default: the system-wide logging rules may hide plain qInfo().
 Q_LOGGING_CATEGORY(lcDaemon, "harbour-ntfy.daemon", QtInfoMsg)
+
+namespace {
+
+int signalPipe[2];
+
+void onTerminationSignal(int)
+{
+    const char byte = 1;
+    // Only async-signal-safe work here; the event loop picks it up.
+    if (::write(signalPipe[1], &byte, 1) < 0) {
+    }
+}
+
+// systemd stops us with SIGTERM: quit through the event loop, so the database gets closed (and its
+// write-ahead log checkpointed) instead of the process just disappearing.
+void quitOnTermination(QCoreApplication *app)
+{
+    if (::pipe(signalPipe) != 0)
+        return;
+    QSocketNotifier *notifier = new QSocketNotifier(signalPipe[0], QSocketNotifier::Read, app);
+    QObject::connect(notifier, &QSocketNotifier::activated, app, []() {
+        char byte;
+        if (::read(signalPipe[0], &byte, 1) > 0)
+            QCoreApplication::quit();
+    });
+    struct sigaction action = {};
+    action.sa_handler = onTerminationSignal;
+    sigemptyset(&action.sa_mask);
+    sigaction(SIGTERM, &action, nullptr);
+    sigaction(SIGINT, &action, nullptr);
+}
+
+} // namespace
 
 int main(int argc, char *argv[])
 {
@@ -36,6 +73,7 @@ int main(int argc, char *argv[])
         qCCritical(lcDaemon, "harbour-ntfy-daemon takes no arguments");
         return 2;
     }
+    quitOnTermination(&app);
 
     NtfySecretsCredentialStore credentials(QStringLiteral("harbourntfydaemon"));
 
@@ -114,5 +152,7 @@ int main(int argc, char *argv[])
     delivery.start();
     qCInfo(lcDaemon, "started (%s, every %d s)", qPrintable(NtfyDeliveryController::modeName(delivery.mode())),
            delivery.interval());
-    return app.exec();
+    const int result = app.exec();
+    qCInfo(lcDaemon, "stopping");
+    return result;
 }
