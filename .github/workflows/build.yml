@@ -5,6 +5,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Read-only by default; only the release job may write (tags and releases).
+permissions:
+  contents: read
+
 jobs:
   build:
     name: SailfishOS ${{ matrix.release }} ${{ matrix.arch }}
@@ -36,3 +40,35 @@ jobs:
           name: harbour-ntfy-${{ matrix.release }}-${{ matrix.arch }}
           path: build-docker/${{ matrix.release }}-${{ matrix.arch }}/*.rpm
           if-no-files-found: error
+
+  # Once every build passed on main: semantic-release reads the Conventional Commits since the
+  # last vX.Y.Z tag, decides the next version (fix: patch, feat: minor, BREAKING CHANGE: major) and
+  # creates that tag plus a GitHub release with the changes. It doesn't commit anything: OBS takes
+  # the version from the tag, so main only ever has the developer's (signed) commits.
+  release:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency: release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # all commits and tags, to work out the next version
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # The preset's major version must match the changelog writer semantic-release bundles
+      # (25.x: conventional-changelog-writer 8, so preset 9.x); 10.x fails to render notes.
+      - name: Release
+        run: >-
+          npx --yes
+          -p semantic-release@25.0.9
+          -p conventional-changelog-conventionalcommits@9.3.1
+          semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
