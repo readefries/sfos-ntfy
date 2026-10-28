@@ -4,6 +4,17 @@
   "plugins": [
     ["@semantic-release/commit-analyzer", { "preset": "conventionalcommits" }],
     ["@semantic-release/release-notes-generator", { "preset": "conventionalcommits" }],
-    ["@semantic-release/github", { "successComment": false, "failComment": false, "releasedLabels": false }]
+    ["@semantic-release/exec", {
+      "verifyReleaseCmd": "echo ${nextRelease.version} > .next-version && { [ -z \"$EXPECTED_VERSION\" ] || [ \"$EXPECTED_VERSION\" = ${nextRelease.version} ]; }"
+    }],
+    ["@semantic-release/github", {
+      "assets": [
+        { "path": "dist/*.rpm" },
+        { "path": "dist/SHA256SUMS", "label": "SHA256SUMS" }
+      ],
+      "successComment": false,
+      "failComment": false,
+      "releasedLabels": false
+    }]
   ]
 }
