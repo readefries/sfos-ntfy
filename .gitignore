@@ -8,4 +8,6 @@ Makefile*
 /build*/
 /RPMS/
 /cli/harbour-ntfy-cli
+# test binaries from in-tree builds, not their sources
 /tests/*/tst_*
+!/tests/*/tst_*.cpp
