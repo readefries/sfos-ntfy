@@ -453,9 +453,10 @@ void TestService::storesAndUsesCredentials()
 
     QTRY_COMPARE_WITH_TIMEOUT(manager.serverState(server), NtfyStream::Connected, 5000);
     // Resumes from when the subscription was made, so a restart can't skip anything.
-    const QByteArray since = QByteArray::number(QDateTime::currentMSecsSinceEpoch() / 1000);
-    QVERIFY2(fake.requestLines.at(0).startsWith("GET /t/json?since=" + since.left(since.size() - 1)),
-             fake.requestLines.at(0).constData());
+    const QByteArray request = fake.requestLines.at(0);
+    QVERIFY2(request.startsWith("GET /t/json?since=") && request.endsWith(" HTTP/1.1"), request.constData());
+    const qint64 since = request.mid(18, request.indexOf(' ', 18) - 18).toLongLong();
+    QVERIFY2(qAbs(QDateTime::currentMSecsSinceEpoch() / 1000 - since) < 60, request.constData());
     QCOMPARE(fake.authHeaders.at(0), QByteArray("Bearer tk_secret"));
 
     QTRY_COMPARE_WITH_TIMEOUT(received.count(), 1, 5000);
