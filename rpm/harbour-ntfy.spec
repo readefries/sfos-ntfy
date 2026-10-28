@@ -21,6 +21,9 @@ BuildRequires:  desktop-file-utils
 Requires:       sailfishsilica-qt5 >= 0.10.9
 Requires:       sailfishsecretsdaemon-secretsplugins-default
 Requires:       qt5-plugin-sqldriver-sqlite
+Requires:       qt5-plugin-sqldriver-sqlcipher
+# For the encrypted database tests (run on build).
+BuildRequires:  qt5-plugin-sqldriver-sqlcipher
 
 %description
 Native ntfy (https://ntfy.sh) push notification client for Sailfish OS.

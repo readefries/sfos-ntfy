@@ -10,6 +10,7 @@
 #include <QSqlDatabase>
 #include <QSqlError>
 #include <QSqlQuery>
+#include <QStringList>
 #include <QVariant>
 
 namespace {
@@ -35,9 +36,107 @@ NtfyDatabase::~NtfyDatabase()
     close();
 }
 
-bool NtfyDatabase::open(const QString &path)
+namespace {
+
+// "x'<hex>'": a raw 256-bit key, so SQLCipher skips its passphrase key derivation.
+QString rawKeyLiteral(const QByteArray &key)
+{
+    return QStringLiteral("\"x'%1'\"").arg(QString::fromLatin1(key.toHex()));
+}
+
+QString sqlString(const QString &value)
+{
+    QString escaped = value;
+    escaped.replace(QLatin1Char('\''), QStringLiteral("''"));
+    return QLatin1Char('\'') + escaped + QLatin1Char('\'');
+}
+
+} // namespace
+
+bool NtfyDatabase::isPlaintextFile(const QString &path)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+        return false;
+    return file.read(16) == QByteArray("SQLite format 3\0", 16);
+}
+
+bool NtfyDatabase::isEncryptionAvailable()
+{
+    return QSqlDatabase::isDriverAvailable(QStringLiteral("QSQLCIPHER"));
+}
+
+bool NtfyDatabase::encryptFile(const QString &path, const QByteArray &key, QString *error)
+{
+    const QString connectionName = QStringLiteral("ntfy-encrypt-%1").arg(connectionCounter.fetchAndAddRelaxed(1));
+    const QString encryptedPath = path + QStringLiteral(".encrypting");
+    for (const QString &leftover : {encryptedPath, encryptedPath + QStringLiteral("-wal"),
+                                    encryptedPath + QStringLiteral("-shm")})
+        QFile::remove(leftover);
+
+    QString failure;
+    {
+        // SQLCipher without a key reads plaintext databases.
+        QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLCIPHER"), connectionName);
+        db.setDatabaseName(path);
+        if (!db.open()) {
+            failure = db.lastError().text();
+        } else {
+            QSqlQuery query(db);
+            int version = 0;
+            if (query.exec(QStringLiteral("PRAGMA user_version")) && query.next())
+                version = query.value(0).toInt();
+            const QStringList steps = {
+                QStringLiteral("ATTACH DATABASE %1 AS encrypted KEY %2").arg(sqlString(encryptedPath), rawKeyLiteral(key)),
+                QStringLiteral("SELECT sqlcipher_export('encrypted')"),
+                QStringLiteral("PRAGMA encrypted.user_version = %1").arg(version),
+                QStringLiteral("DETACH DATABASE encrypted"),
+            };
+            for (const QString &step : steps) {
+                if (!query.exec(step)) {
+                    failure = query.lastError().text();
+                    break;
+                }
+            }
+            query.finish();
+            db.close();
+        }
+    }
+    QSqlDatabase::removeDatabase(connectionName);
+
+    if (failure.isEmpty()) {
+        // Swap the files, then drop the plaintext copy. (On flash storage that doesn't guarantee
+        // the old blocks are gone, but it's what we can do; home encryption covers the rest.)
+        const QString plaintextPath = path + QStringLiteral(".plaintext");
+        QFile::remove(plaintextPath);
+        if (!QFile::rename(path, plaintextPath) || !QFile::rename(encryptedPath, path)) {
+            failure = QStringLiteral("could not replace the database file");
+            QFile::rename(plaintextPath, path);
+        } else {
+            QFile::setPermissions(path, QFile::ReadOwner | QFile::WriteOwner);
+            for (const QString &old : {plaintextPath, plaintextPath + QStringLiteral("-wal"),
+                                       plaintextPath + QStringLiteral("-shm"), path + QStringLiteral("-wal"),
+                                       path + QStringLiteral("-shm")})
+                QFile::remove(old);
+        }
+    }
+
+    if (!failure.isEmpty()) {
+        QFile::remove(encryptedPath);
+        if (error)
+            *error = QStringLiteral("encrypt database: ") + failure;
+        return false;
+    }
+    return true;
+}
+
+bool NtfyDatabase::open(const QString &path, const QByteArray &key)
 {
     close();
+
+    const QString driver = key.isEmpty() ? QStringLiteral("QSQLITE") : QStringLiteral("QSQLCIPHER");
+    if (!QSqlDatabase::isDriverAvailable(driver))
+        return fail(QStringLiteral("open"), QStringLiteral("SQL driver %1 is not installed").arg(driver));
 
     const bool inMemory = path == QLatin1String(":memory:");
     if (!inMemory) {
@@ -57,13 +156,26 @@ bool NtfyDatabase::open(const QString &path)
     }
 
     {
-        QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), m_connectionName);
+        QSqlDatabase db = QSqlDatabase::addDatabase(driver, m_connectionName);
         db.setDatabaseName(path);
         if (!db.open()) {
             const QString error = db.lastError().text();
             db = QSqlDatabase();
             QSqlDatabase::removeDatabase(m_connectionName);
             return fail(QStringLiteral("open"), error);
+        }
+    }
+
+    if (!key.isEmpty()) {
+        // Must come first. A wrong key only shows when something gets read.
+        bool readable = exec(QStringLiteral("PRAGMA key = %1").arg(rawKeyLiteral(key)));
+        if (readable) {
+            QSqlQuery check(connection(m_connectionName));
+            readable = check.exec(QStringLiteral("SELECT count(*) FROM sqlite_master"));
+        }
+        if (!readable) {
+            close();
+            return fail(QStringLiteral("open"), QStringLiteral("wrong key, or not an encrypted database"));
         }
     }
 

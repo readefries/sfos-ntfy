@@ -54,7 +54,9 @@ public:
     ~NtfyDatabase();
 
     // Opens (creating if needed) and migrates the database. ":memory:" gives a throwaway one.
-    bool open(const QString &path);
+    // With a key (32 random bytes) the whole file is encrypted with SQLCipher; opening it with
+    // the wrong key fails.
+    bool open(const QString &path, const QByteArray &key = QByteArray());
     void close();
     bool isOpen() const;
     QString lastError() const { return m_error; }
@@ -87,6 +89,13 @@ public:
     qint64 resumeTime(qint64 serverId) const;
     // Keeps the newest keepPerSubscription messages of every subscription. Returns how many went.
     int pruneMessages(int keepPerSubscription);
+
+    // Whether the SQLCipher driver (qt5-plugin-sqldriver-sqlcipher) is installed.
+    static bool isEncryptionAvailable();
+    // Whether path is an unencrypted SQLite database (from before databases were encrypted).
+    static bool isPlaintextFile(const QString &path);
+    // Rewrites the unencrypted database at path as one encrypted with key, in place.
+    static bool encryptFile(const QString &path, const QByteArray &key, QString *error = nullptr);
 
     QString setting(const QString &key, const QString &defaultValue = QString()) const;
     bool setSetting(const QString &key, const QString &value);

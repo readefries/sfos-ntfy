@@ -2,6 +2,7 @@
 #include "ntfyactionrunner.h"
 #include "ntfycredentials.h"
 #include "ntfydatabase.h"
+#include "ntfydatabasekey.h"
 #include "ntfydbusservice.h"
 #include "ntfydeliverycontroller.h"
 #include "ntfysubscriptionmanager.h"
@@ -13,6 +14,7 @@
 #include <QDBusPendingReply>
 #include <QDateTime>
 #include <QElapsedTimer>
+#include <QDir>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -109,6 +111,10 @@ private slots:
     void subscriptionsAndMessages();
     void removingServerCascades();
     void pruneKeepsNewest();
+    void databaseKeyCreatedOnce();
+    void encryptedDatabase();
+    void encryptsExistingDatabase();
+    void unreadableDatabaseMovedAside();
 
     void rejectsInvalidInput();
     void storesAndUsesCredentials();
@@ -262,6 +268,126 @@ void TestService::pruneKeepsNewest()
     QCOMPARE(left.at(0).event.id, QStringLiteral("a5"));
     QCOMPARE(left.at(1).event.id, QStringLiteral("a4"));
     QCOMPARE(db.messages(b, 10).size(), 1);
+}
+
+void TestService::databaseKeyCreatedOnce()
+{
+    NtfyMemoryCredentialStore store;
+    QByteArray key, again;
+    bool created = false;
+    QVERIFY(ntfyDatabaseKey(&store, &key, &created));
+    QVERIFY(created);
+    QCOMPARE(key.size(), 32);
+    QVERIFY(key != QByteArray(32, '\0'));
+
+    QVERIFY(ntfyDatabaseKey(&store, &again, &created));
+    QVERIFY(!created);
+    QCOMPARE(again, key);
+
+    // While Secrets is locked there's no key, and no new one either.
+    FailingCredentialStore locked;
+    QString error;
+    QVERIFY(!ntfyDatabaseKey(&locked, &key, &created, &error));
+    QVERIFY(!created);
+    QVERIFY(error.contains(QStringLiteral("collection is locked")));
+}
+
+void TestService::encryptedDatabase()
+{
+    if (!NtfyDatabase::isEncryptionAvailable())
+        QSKIP("SQLCipher driver not installed");
+
+    QTemporaryDir dir;
+    const QString path = dir.path() + QStringLiteral("/ntfy.db");
+    const QByteArray key(32, 'k');
+    {
+        NtfyDatabase db;
+        QVERIFY2(db.open(path, key), qPrintable(db.lastError()));
+        const qint64 server = db.addServer(QUrl(QStringLiteral("https://ntfy.sh")));
+        db.addSubscription(server, QStringLiteral("secret-topic"), QString());
+    }
+
+    QVERIFY(!NtfyDatabase::isPlaintextFile(path));
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    QVERIFY(!file.readAll().contains("secret-topic"));
+    file.close();
+
+    NtfyDatabase db;
+    QVERIFY(!db.open(path, QByteArray(32, 'x')));
+    QVERIFY(db.lastError().contains(QStringLiteral("wrong key")));
+    QVERIFY(!db.isOpen());
+    QVERIFY(!db.open(path)); // not readable without a key either
+    QVERIFY2(db.open(path, key), qPrintable(db.lastError()));
+    QCOMPARE(db.subscriptions().at(0).topic, QStringLiteral("secret-topic"));
+}
+
+void TestService::encryptsExistingDatabase()
+{
+    if (!NtfyDatabase::isEncryptionAvailable())
+        QSKIP("SQLCipher driver not installed");
+
+    QTemporaryDir dir;
+    const QString path = dir.path() + QStringLiteral("/ntfy.db");
+    {
+        NtfyDatabase plain;
+        QVERIFY(plain.open(path));
+        const qint64 server = plain.addServer(QUrl(QStringLiteral("https://ntfy.sh")));
+        const qint64 sub = plain.addSubscription(server, QStringLiteral("old-topic"), QStringLiteral("Old"));
+        plain.addMessage(sub, message(QStringLiteral("m1"), 100, QStringLiteral("old-topic")));
+        plain.setSetting(QStringLiteral("delivery/mode"), QStringLiteral("instant"));
+    }
+    QVERIFY(NtfyDatabase::isPlaintextFile(path));
+
+    const QByteArray key(32, 'k');
+    NtfyDatabase db;
+    QString notice, error;
+    QVERIFY2(ntfyOpenEncryptedDatabase(&db, path, key, &notice, &error), qPrintable(error));
+    QCOMPARE(notice, QStringLiteral("encrypted the existing database"));
+    QVERIFY(!NtfyDatabase::isPlaintextFile(path));
+    QVERIFY(!QFile::exists(path + QStringLiteral(".plaintext")));
+    QVERIFY(!QFile::exists(path + QStringLiteral(".encrypting")));
+    QCOMPARE(QFileInfo(path).permissions() & (QFile::ReadOther | QFile::ReadGroup), QFile::Permissions());
+
+    // Everything came along, and the schema version too (no migration ran twice).
+    QCOMPARE(db.subscriptions().size(), 1);
+    QCOMPARE(db.subscriptions().at(0).displayName, QStringLiteral("Old"));
+    QCOMPARE(db.messages(db.subscriptions().at(0).id, 10).size(), 1);
+    QCOMPARE(db.setting(QStringLiteral("delivery/mode")), QStringLiteral("instant"));
+    db.close();
+
+    // Next start: nothing left to convert.
+    NtfyDatabase again;
+    QVERIFY(ntfyOpenEncryptedDatabase(&again, path, key, &notice, &error));
+    QVERIFY(notice.isEmpty());
+    QCOMPARE(again.subscriptions().size(), 1);
+}
+
+void TestService::unreadableDatabaseMovedAside()
+{
+    if (!NtfyDatabase::isEncryptionAvailable())
+        QSKIP("SQLCipher driver not installed");
+
+    QTemporaryDir dir;
+    const QString path = dir.path() + QStringLiteral("/ntfy.db");
+    {
+        NtfyDatabase db;
+        QVERIFY(db.open(path, QByteArray(32, 'a')));
+        db.addServer(QUrl(QStringLiteral("https://ntfy.sh")));
+    }
+
+    NtfyDatabase db;
+    QString notice, error;
+    QVERIFY2(ntfyOpenEncryptedDatabase(&db, path, QByteArray(32, 'b'), &notice, &error), qPrintable(error));
+    QVERIFY(notice.startsWith(QStringLiteral("could not decrypt the database")));
+    QVERIFY(db.servers().isEmpty()); // started over
+    const QStringList aside = QDir(dir.path()).entryList(QStringList() << QStringLiteral("ntfy.db.unreadable-*"));
+    QCOMPARE(aside.size(), 1);
+
+    // The old file is still there, readable with the old key.
+    NtfyDatabase old;
+    QVERIFY(old.open(dir.path() + QLatin1Char('/') + aside.first(), QByteArray(32, 'a')));
+    QCOMPARE(old.servers().size(), 1);
 }
 
 void TestService::rejectsInvalidInput()

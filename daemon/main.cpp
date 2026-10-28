@@ -9,6 +9,7 @@
 #include "ntfyactionrunner.h"
 #include "ntfybackgroundactivityscheduler.h"
 #include "ntfydatabase.h"
+#include "ntfydatabasekey.h"
 #include "ntfydbusservice.h"
 #include "ntfydeliverycontroller.h"
 #include "ntfynotifier.h"
@@ -36,15 +37,30 @@ int main(int argc, char *argv[])
         return 2;
     }
 
+    NtfySecretsCredentialStore credentials(QStringLiteral("harbourntfydaemon"));
+
+    // Everything in the database (topics, messages) is encrypted with a key kept in Secrets.
+    // Until the first unlock after boot Secrets can't hand it out: exit, and systemd retries.
+    QByteArray key;
+    bool newKey = false;
+    QString error;
+    if (!ntfyDatabaseKey(&credentials, &key, &newKey, &error)) {
+        qCCritical(lcDaemon, "%s (is the device still locked?)", qPrintable(error));
+        return 1;
+    }
+    if (newKey)
+        qCInfo(lcDaemon, "created a new database key");
+
     const QString databasePath = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)
             + QStringLiteral("/harbour-ntfy/ntfy.db");
     NtfyDatabase database;
-    if (!database.open(databasePath)) {
-        qCCritical(lcDaemon, "could not open database: %s", qPrintable(database.lastError()));
+    QString notice;
+    if (!ntfyOpenEncryptedDatabase(&database, databasePath, key, &notice, &error)) {
+        qCCritical(lcDaemon, "could not open database: %s", qPrintable(error));
         return 1;
     }
-
-    NtfySecretsCredentialStore credentials(QStringLiteral("harbourntfydaemon"));
+    if (!notice.isEmpty())
+        qCWarning(lcDaemon, "%s", qPrintable(notice));
     QNetworkAccessManager nam;
     NtfySubscriptionManager manager(&database, &credentials, &nam);
     NtfyBackgroundActivityScheduler scheduler;
@@ -83,7 +99,6 @@ int main(int argc, char *argv[])
                delivery.interval());
     });
 
-    QString error;
     if (!service.registerOn(QDBusConnection::sessionBus(), &error)) {
         qCCritical(lcDaemon, "%s", qPrintable(error));
         return 1;

@@ -9,6 +9,7 @@ QT = core network sql dbus
 HEADERS += \
     ntfyactionrunner.h \
     ntfydatabase.h \
+    ntfydatabasekey.h \
     ntfydbusservice.h \
     ntfydeliverycontroller.h \
     ntfysubscriptionmanager.h
@@ -16,6 +17,7 @@ HEADERS += \
 SOURCES += \
     ntfyactionrunner.cpp \
     ntfydatabase.cpp \
+    ntfydatabasekey.cpp \
     ntfydbusservice.cpp \
     ntfydeliverycontroller.cpp \
     ntfysubscriptionmanager.cpp
