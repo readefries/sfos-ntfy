@@ -28,8 +28,13 @@ else
     distrobox enter sailfish-sdk -- sh -c "$sfdk_build"
 fi
 
-rpm=$(ls "$build"/RPMS/harbour-ntfy-*.rpm)
-scp -q "$rpm" "$host:"
+# The app and the CLI (a separate package since the Chum split), installed together.
+set -- "$build"/RPMS/harbour-ntfy-*.rpm
+scp -q "$@" "$host:"
+names=
+for rpm in "$@"; do
+    names="$names ./$(basename "$rpm")"
+done
 echo
-echo "Copied $(basename "$rpm") to $host. On the phone:"
-echo "  devel-su pkcon install-local ./$(basename "$rpm") && systemctl --user restart harbour-ntfy-daemon"
+echo "Copied$names to $host. On the phone:"
+echo "  devel-su pkcon install-local$names && systemctl --user restart harbour-ntfy-daemon"
