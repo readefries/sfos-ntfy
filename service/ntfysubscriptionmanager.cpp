@@ -142,6 +142,13 @@ bool NtfySubscriptionManager::removeServer(qint64 serverId, QString *error)
         return false;
     }
 
+    // The database takes the subscriptions along.
+    QList<qint64> removed;
+    for (const NtfySubscriptionRecord &subscription : m_database->subscriptions()) {
+        if (subscription.serverId == serverId)
+            removed << subscription.id;
+    }
+
     m_lastErrors.remove(serverId);
     if (!m_database->removeServer(serverId)) {
         if (error)
@@ -149,6 +156,8 @@ bool NtfySubscriptionManager::removeServer(qint64 serverId, QString *error)
         return false;
     }
     emit subscriptionsChanged();
+    for (qint64 subscriptionId : removed)
+        emit subscriptionRemoved(subscriptionId);
     return true;
 }
 
@@ -196,6 +205,7 @@ bool NtfySubscriptionManager::removeSubscription(qint64 subscriptionId, QString 
     if (m_started)
         syncServer(subscription.serverId);
     emit subscriptionsChanged();
+    emit subscriptionRemoved(subscriptionId);
     return true;
 }
 

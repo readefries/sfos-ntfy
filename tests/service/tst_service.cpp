@@ -535,11 +535,26 @@ void TestService::removeServerRemovesCredentials()
 
     const QUrl url(QStringLiteral("https://ntfy.example.com"));
     const qint64 server = manager.addServer(url, QString(), QStringLiteral("phil"), QStringLiteral("pw"));
-    manager.addSubscription(server, QStringLiteral("t"), QString());
+    const qint64 first = manager.addSubscription(server, QStringLiteral("t"), QString());
+    const qint64 second = manager.addSubscription(server, QStringLiteral("u"), QString());
+    const qint64 other = manager.addServer(QUrl(QStringLiteral("https://ntfy.sh")), QString(), QString(), QString());
+    const qint64 kept = manager.addSubscription(other, QStringLiteral("t"), QString());
 
+    QSignalSpy removed(&manager, &NtfySubscriptionManager::subscriptionRemoved);
+    QVERIFY(manager.removeSubscription(second));
+    QCOMPARE(removed.count(), 1);
+    QCOMPARE(removed.takeFirst().at(0).toLongLong(), second);
+
+    // Its subscriptions go along, so their notifications can too.
     QSignalSpy changed(&manager, &NtfySubscriptionManager::subscriptionsChanged);
     QVERIFY(manager.removeServer(server));
     QCOMPARE(changed.count(), 1);
+    QCOMPARE(removed.count(), 1);
+    QCOMPARE(removed.at(0).at(0).toLongLong(), first);
+    QCOMPARE(db.servers().size(), 1);
+    QCOMPARE(db.subscriptions().size(), 1);
+    QCOMPARE(db.subscriptions().at(0).id, kept);
+    QVERIFY(manager.removeServer(other));
     QVERIFY(db.servers().isEmpty());
     QVERIFY(db.subscriptions().isEmpty());
 

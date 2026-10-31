@@ -74,6 +74,8 @@ signals:
     void subscriptionsChanged();
     // markRead(), so its notifications can go.
     void subscriptionRead(qint64 subscriptionId);
+    // Likewise, also for each subscription of a removed server.
+    void subscriptionRemoved(qint64 subscriptionId);
     void pollFinished();
 
 private:

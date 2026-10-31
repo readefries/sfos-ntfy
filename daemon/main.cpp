@@ -134,6 +134,7 @@ int main(int argc, char *argv[])
                 notifier.notify(message.event, subscription.id);
         });
         QObject::connect(manager, &NtfySubscriptionManager::subscriptionRead, &notifier, &NtfyNotifier::closeTagged);
+        QObject::connect(manager, &NtfySubscriptionManager::subscriptionRemoved, &notifier, &NtfyNotifier::closeTagged);
 
         // Log server ids only: URLs and topic names are private.
         QObject::connect(manager, &NtfySubscriptionManager::serverStateChanged, [](qint64 serverId, NtfyStream::State state) {
