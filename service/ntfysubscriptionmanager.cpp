@@ -210,8 +210,10 @@ bool NtfySubscriptionManager::setMuted(qint64 subscriptionId, bool muted)
 bool NtfySubscriptionManager::markRead(qint64 subscriptionId)
 {
     const bool ok = m_database->markRead(subscriptionId);
-    if (ok)
+    if (ok) {
         emit subscriptionsChanged();
+        emit subscriptionRead(subscriptionId);
+    }
     return ok;
 }
 

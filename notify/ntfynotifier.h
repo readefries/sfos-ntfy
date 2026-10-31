@@ -27,6 +27,9 @@ public:
 
 public slots:
     void notify(const NtfyEvent &message, qint64 tag = 0);
+    // Removes the notifications posted with this tag from the Events view, including ones from
+    // before a restart.
+    void closeTagged(qint64 tag);
 
 signals:
     // Only delivered while this process is alive; lipstick keeps the notification regardless.

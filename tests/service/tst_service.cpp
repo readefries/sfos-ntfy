@@ -1071,10 +1071,13 @@ void TestService::dbusService()
     QVERIFY(reply.arguments().at(0).toString().contains(QStringLiteral("\"wakeups\":0")));
 
     QSignalSpy activated(&service, &NtfyDBusService::notificationActivated);
+    QSignalSpy read(&manager, &NtfySubscriptionManager::subscriptionRead);
     reply = callAsync(client, QStringLiteral("NotificationActivated"), QVariantList() << sub);
     QCOMPARE(reply.type(), QDBusMessage::ReplyMessage);
     QCOMPARE(activated.count(), 1);
     QCOMPARE(db.subscription(sub).unreadCount, 0);
+    QCOMPARE(read.count(), 1); // its notifications go
+    QCOMPARE(read.at(0).at(0).toLongLong(), qint64(sub));
 
     reply = callAsync(client, QStringLiteral("RemoveServer"), QVariantList() << server);
     QCOMPARE(reply.type(), QDBusMessage::ReplyMessage);

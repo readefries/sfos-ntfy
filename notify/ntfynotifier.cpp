@@ -7,6 +7,8 @@
 
 namespace {
 const int MaxRecentNotifications = 20;
+// Lipstick keeps the hints it doesn't know with the notification, so the tag survives our restarts.
+const QString TagHint = QStringLiteral("x-harbour-ntfy-tag");
 
 static_assert(int(NtfyNotificationContent::Low) == int(Notification::Low)
               && int(NtfyNotificationContent::Normal) == int(Notification::Normal)
@@ -56,6 +58,7 @@ void NtfyNotifier::notify(const NtfyEvent &message, qint64 tag)
     notification->setUrgency(static_cast<Notification::Urgency>(content.urgency));
     if (content.timestamp.isValid())
         notification->setTimestamp(content.timestamp);
+    notification->setHintValue(TagHint, QVariant::fromValue<qlonglong>(tag));
 
     // Lipstick only reports activation for notifications that have a "default" action. Without a
     // D-Bus callback it just signals us (if we're still running) and dismisses the notification.
@@ -82,4 +85,16 @@ void NtfyNotifier::notify(const NtfyEvent &message, qint64 tag)
         if (oldest)
             oldest->deleteLater();
     }
+}
+
+void NtfyNotifier::closeTagged(qint64 tag)
+{
+    // Ours as lipstick has them, as new objects that are ours to delete.
+    const QList<QObject *> notifications = Notification::notifications();
+    for (QObject *object : notifications) {
+        Notification *notification = qobject_cast<Notification *>(object);
+        if (notification && notification->hintValue(TagHint).toLongLong() == tag)
+            notification->close();
+    }
+    qDeleteAll(notifications);
 }

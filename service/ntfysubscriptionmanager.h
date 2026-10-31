@@ -72,6 +72,8 @@ signals:
     void serverStateChanged(qint64 serverId, NtfyStream::State state);
     void serverError(qint64 serverId, const QString &error);
     void subscriptionsChanged();
+    // markRead(), so its notifications can go.
+    void subscriptionRead(qint64 subscriptionId);
     void pollFinished();
 
 private:
