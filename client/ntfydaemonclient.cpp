@@ -14,6 +14,7 @@ namespace {
 const QString ServiceName = QStringLiteral("nl.readefries.harbourntfy");
 const QString ObjectPath = QStringLiteral("/");
 const QString Interface = QStringLiteral("nl.readefries.harbourntfy.Daemon");
+const QString LockedError = QStringLiteral("nl.readefries.harbourntfy.Error.Locked");
 
 QJsonArray parseArray(const QVariant &value)
 {
@@ -31,6 +32,15 @@ NtfyDaemonClient::NtfyDaemonClient(const QDBusConnection &connection, QObject *p
     , m_connection(connection)
 {
     connectSignals();
+
+    // Not via callThen(): an older daemon without Locked() is simply unlocked.
+    QDBusPendingCallWatcher *watcher = new QDBusPendingCallWatcher(call(QStringLiteral("Locked")), this);
+    connect(watcher, &QDBusPendingCallWatcher::finished, this, [this](QDBusPendingCallWatcher *watcher) {
+        watcher->deleteLater();
+        const QDBusMessage reply = watcher->reply();
+        if (reply.type() == QDBusMessage::ReplyMessage)
+            setLocked(reply.arguments().value(0).toBool());
+    });
 }
 
 void NtfyDaemonClient::connectSignals()
@@ -45,6 +55,55 @@ void NtfyDaemonClient::connectSignals()
                          this, SIGNAL(serverStateChanged(qlonglong,QString)));
     m_connection.connect(ServiceName, ObjectPath, Interface, QStringLiteral("MessageReceived"),
                          this, SLOT(onMessageReceived(qlonglong,QString)));
+    m_connection.connect(ServiceName, ObjectPath, Interface, QStringLiteral("LockedChanged"),
+                         this, SLOT(onLockedChanged(bool)));
+    m_connection.connect(ServiceName, ObjectPath, Interface, QStringLiteral("UnlockFailed"),
+                         this, SLOT(onUnlockFailed(QString)));
+}
+
+void NtfyDaemonClient::setLocked(bool locked)
+{
+    if (m_locked == locked)
+        return;
+    m_locked = locked;
+    emit lockedChanged();
+}
+
+void NtfyDaemonClient::setUnlocking(bool unlocking)
+{
+    if (m_unlocking == unlocking)
+        return;
+    m_unlocking = unlocking;
+    emit unlockingChanged();
+}
+
+void NtfyDaemonClient::onLockedChanged(bool locked)
+{
+    setUnlocking(false);
+    setLocked(locked);
+}
+
+void NtfyDaemonClient::onUnlockFailed(const QString &error)
+{
+    setUnlocking(false);
+    emit unlockFailed(error);
+}
+
+void NtfyDaemonClient::unlock()
+{
+    if (m_unlocking)
+        return;
+    setUnlocking(true);
+    // Replies at once; the outcome comes as a signal.
+    QDBusPendingCallWatcher *watcher = new QDBusPendingCallWatcher(call(QStringLiteral("Unlock")), this);
+    connect(watcher, &QDBusPendingCallWatcher::finished, this, [this](QDBusPendingCallWatcher *watcher) {
+        watcher->deleteLater();
+        const QDBusMessage reply = watcher->reply();
+        if (reply.type() == QDBusMessage::ErrorMessage) {
+            setUnlocking(false);
+            emit unlockFailed(reply.errorMessage());
+        }
+    });
 }
 
 void NtfyDaemonClient::onMessageReceived(qlonglong subscriptionId, const QString &message)
@@ -67,7 +126,11 @@ void NtfyDaemonClient::callThen(const QString &method, const QVariantList &argum
         watcher->deleteLater();
         const QDBusMessage reply = watcher->reply();
         if (reply.type() == QDBusMessage::ErrorMessage) {
-            emit failed(reply.errorMessage());
+            // Not a failure worth a notice: the UI shows the locked state instead.
+            if (reply.errorName() == LockedError)
+                setLocked(true);
+            else
+                emit failed(reply.errorMessage());
             return;
         }
         if (onReply)

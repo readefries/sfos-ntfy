@@ -16,18 +16,34 @@ Page {
         }
 
         PullDownMenu {
+            busy: daemon.unlocking
+
             MenuItem {
+                visible: daemon.locked
+                enabled: !daemon.unlocking
+                text: qsTr("Unlock")
+                onClicked: daemon.unlock()
+            }
+            MenuItem {
+                visible: !daemon.locked
                 text: qsTr("Settings")
                 onClicked: pageStack.push(Qt.resolvedUrl("SettingsPage.qml"))
             }
             MenuItem {
+                visible: !daemon.locked
                 text: qsTr("Add subscription")
                 onClicked: pageStack.push(Qt.resolvedUrl("AddSubscriptionDialog.qml"))
             }
         }
 
         ViewPlaceholder {
-            enabled: app.subscriptions.loaded && list.count === 0
+            enabled: daemon.locked
+            text: daemon.unlocking ? qsTr("Waiting for the device lock code") : qsTr("Locked after restart")
+            hintText: daemon.unlocking ? "" : qsTr("Pull down to unlock. No notifications arrive until then.")
+        }
+
+        ViewPlaceholder {
+            enabled: !daemon.locked && app.subscriptions.loaded && list.count === 0
             text: qsTr("No subscriptions")
             hintText: qsTr("Pull down to subscribe to a topic")
         }

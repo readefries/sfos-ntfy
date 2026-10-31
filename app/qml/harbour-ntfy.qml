@@ -10,6 +10,16 @@ ApplicationWindow {
     property alias subscriptions: subscriptionModel
     // A notification tap that arrived before the subscriptions were loaded.
     property var pendingSubscription: 0
+    // After a reboot the daemon is locked. Opening the app is the moment to ask for the device
+    // lock code, but only once: after a cancel the subscriptions page offers it.
+    property bool unlockAsked: false
+
+    function unlockOnce() {
+        if (daemon.locked && !unlockAsked && Qt.application.active) {
+            unlockAsked = true
+            daemon.unlock()
+        }
+    }
 
     SubscriptionModel {
         id: subscriptionModel
@@ -47,6 +57,13 @@ ApplicationWindow {
     Connections {
         target: daemon
         onFailed: Notices.show(error, Notice.Long, Notice.Center)
+        onUnlockFailed: Notices.show(qsTr("Could not unlock: %1").arg(error), Notice.Long, Notice.Center)
+        onLockedChanged: unlockOnce()
+    }
+
+    Connections {
+        target: Qt.application
+        onActiveChanged: unlockOnce()
     }
 
     initialPage: Component { SubscriptionsPage { } }
