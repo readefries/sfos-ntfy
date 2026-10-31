@@ -18,6 +18,8 @@ namespace NtfyDBus {
 extern const char *const ServiceName;
 extern const char *const ObjectPath;
 extern const char *const Interface;
+// The error every call but Locked() and Unlock() gets while the daemon is locked.
+extern const char *const LockedError;
 }
 
 // The daemon's session bus API, used by the UI. Lists and messages are passed as JSON strings.
@@ -25,13 +27,21 @@ extern const char *const Interface;
 // Credentials can be set through AddServer() but are never returned. Note that any unsandboxed
 // process of the same user can talk to (and listen on) the session bus, just like it can read
 // the database file; Sailjail keeps sandboxed apps off it.
+//
+// Without a manager the daemon is locked: the database key is in a Secrets collection that stays
+// locked after a reboot until the device lock code is entered in the system's prompt, which only
+// shows when someone asks for it with Unlock(). setManager() ends that.
 class NtfyDBusService : public QObject, protected QDBusContext
 {
     Q_OBJECT
     Q_CLASSINFO("D-Bus Interface", "nl.readefries.harbourntfy.Daemon")
 public:
-    explicit NtfyDBusService(NtfySubscriptionManager *manager, QObject *parent = nullptr);
+    explicit NtfyDBusService(NtfySubscriptionManager *manager = nullptr, QObject *parent = nullptr);
 
+    // Once, when unlocked.
+    void setManager(NtfySubscriptionManager *manager);
+    // An unlockRequested() that didn't work out.
+    void unlockFailed(const QString &error);
     void setDeliveryController(NtfyDeliveryController *delivery);
     void setActionRunner(NtfyActionRunner *actions);
 
@@ -41,6 +51,11 @@ public:
     static QString stateName(NtfyStream::State state);
 
 public slots:
+    Q_SCRIPTABLE bool Locked();
+    // Replies right away, then asks the daemon to unlock (see unlockRequested()). The outcome
+    // comes as LockedChanged() or UnlockFailed().
+    Q_SCRIPTABLE void Unlock();
+
     Q_SCRIPTABLE qlonglong AddServer(const QString &url, const QString &token, const QString &username,
                                      const QString &password);
     Q_SCRIPTABLE void RemoveServer(qlonglong serverId);
@@ -78,12 +93,19 @@ signals:
     Q_SCRIPTABLE void ServerStateChanged(qlonglong serverId, const QString &state);
     Q_SCRIPTABLE void ServerError(qlonglong serverId, const QString &error);
     Q_SCRIPTABLE void DeliveryChanged();
+    Q_SCRIPTABLE void LockedChanged(bool locked);
+    Q_SCRIPTABLE void UnlockFailed(const QString &error);
 
     // Local only, not exported.
     void notificationActivated(qlonglong subscriptionId);
+    // Emitted from the event loop, after Unlock() replied: unlocking blocks until the user has
+    // answered the prompt, longer than a D-Bus caller waits.
+    void unlockRequested();
 
 private:
     void replyError(const QString &error);
+    // False, replying LockedError, while locked.
+    bool unlocked();
 
     NtfySubscriptionManager *m_manager;
     NtfyDeliveryController *m_delivery = nullptr;

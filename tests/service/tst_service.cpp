@@ -140,6 +140,7 @@ private slots:
 
     void dbusService();
     void dbusRunAction();
+    void dbusLocked();
 };
 
 void TestService::databaseFilePermissions()
@@ -1136,6 +1137,65 @@ void TestService::dbusRunAction()
     QCOMPARE(reply.errorMessage(), QStringLiteral("no such action"));
     reply = callAsync(client, QStringLiteral("RunAction"), QVariantList() << qlonglong(row + 1) << 0);
     QCOMPARE(reply.errorMessage(), QStringLiteral("no such action"));
+
+    QDBusConnection::disconnectFromBus(QStringLiteral("client"));
+    QDBusConnection::sessionBus().unregisterService(QString::fromLatin1(NtfyDBus::ServiceName));
+    QDBusConnection::sessionBus().unregisterObject(QString::fromLatin1(NtfyDBus::ObjectPath));
+}
+
+void TestService::dbusLocked()
+{
+    if (!QDBusConnection::sessionBus().isConnected())
+        QSKIP("no session bus");
+
+    // No key yet, so no database and no manager.
+    NtfyDBusService service;
+    QString error;
+    QVERIFY2(service.registerOn(QDBusConnection::sessionBus(), &error), qPrintable(error));
+    QDBusConnection client = QDBusConnection::connectToBus(QDBusConnection::SessionBus, QStringLiteral("client"));
+
+    QDBusMessage reply = callAsync(client, QStringLiteral("Locked"));
+    QCOMPARE(reply.arguments().at(0).toBool(), true);
+    reply = callAsync(client, QStringLiteral("Subscriptions"));
+    QCOMPARE(reply.type(), QDBusMessage::ErrorMessage);
+    QCOMPARE(reply.errorName(), QString::fromLatin1(NtfyDBus::LockedError));
+    reply = callAsync(client, QStringLiteral("Delivery"));
+    QCOMPARE(reply.errorName(), QString::fromLatin1(NtfyDBus::LockedError));
+
+    // Unlock() answers first: the unlocking itself waits for the user.
+    QSignalSpy requested(&service, &NtfyDBusService::unlockRequested);
+    reply = callAsync(client, QStringLiteral("Unlock"));
+    QCOMPARE(reply.type(), QDBusMessage::ReplyMessage);
+    QTRY_COMPARE(requested.count(), 1);
+
+    QSignalSpy failed(&service, &NtfyDBusService::UnlockFailed);
+    service.unlockFailed(QStringLiteral("cancelled"));
+    QCOMPARE(failed.count(), 1);
+    QCOMPARE(failed.at(0).at(0).toString(), QStringLiteral("cancelled"));
+
+    NtfyDatabase db;
+    QVERIFY(db.open(QStringLiteral(":memory:")));
+    NtfyMemoryCredentialStore credentials;
+    QNetworkAccessManager nam;
+    NtfySubscriptionManager manager(&db, &credentials, &nam);
+    QSignalSpy lockedChanged(&service, &NtfyDBusService::LockedChanged);
+    QSignalSpy subscriptionsChanged(&service, &NtfyDBusService::SubscriptionsChanged);
+    service.setManager(&manager);
+    QCOMPARE(lockedChanged.count(), 1);
+    QCOMPARE(lockedChanged.at(0).at(0).toBool(), false);
+    QCOMPARE(subscriptionsChanged.count(), 1);
+
+    reply = callAsync(client, QStringLiteral("Locked"));
+    QCOMPARE(reply.arguments().at(0).toBool(), false);
+    reply = callAsync(client, QStringLiteral("Subscriptions"));
+    QCOMPARE(reply.type(), QDBusMessage::ReplyMessage);
+    QCOMPARE(reply.arguments().at(0).toString(), QStringLiteral("[]"));
+
+    // Nothing left to unlock.
+    reply = callAsync(client, QStringLiteral("Unlock"));
+    QCOMPARE(reply.type(), QDBusMessage::ReplyMessage);
+    QCoreApplication::processEvents();
+    QCOMPARE(requested.count(), 1);
 
     QDBusConnection::disconnectFromBus(QStringLiteral("client"));
     QDBusConnection::sessionBus().unregisterService(QString::fromLatin1(NtfyDBus::ServiceName));

@@ -11,11 +11,13 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QTimer>
 
 namespace NtfyDBus {
 const char *const ServiceName = "nl.readefries.harbourntfy";
 const char *const ObjectPath = "/";
 const char *const Interface = "nl.readefries.harbourntfy.Daemon";
+const char *const LockedError = "nl.readefries.harbourntfy.Error.Locked";
 }
 
 namespace {
@@ -45,8 +47,16 @@ QString toString(const QJsonArray &array)
 
 NtfyDBusService::NtfyDBusService(NtfySubscriptionManager *manager, QObject *parent)
     : QObject(parent)
-    , m_manager(manager)
+    , m_manager(nullptr)
 {
+    if (manager)
+        setManager(manager);
+}
+
+void NtfyDBusService::setManager(NtfySubscriptionManager *manager)
+{
+    Q_ASSERT(!m_manager && manager);
+    m_manager = manager;
     connect(m_manager, &NtfySubscriptionManager::messageReceived, this,
             [this](const NtfySubscriptionRecord &subscription, const NtfyStoredMessage &message) {
         emit MessageReceived(subscription.id,
@@ -58,6 +68,15 @@ NtfyDBusService::NtfyDBusService(NtfySubscriptionManager *manager, QObject *pare
         emit ServerStateChanged(serverId, stateName(state));
     });
     connect(m_manager, &NtfySubscriptionManager::serverError, this, &NtfyDBusService::ServerError);
+    emit LockedChanged(false);
+    // Unknown until now, as far as the UI is concerned.
+    emit SubscriptionsChanged();
+    emit DeliveryChanged();
+}
+
+void NtfyDBusService::unlockFailed(const QString &error)
+{
+    emit UnlockFailed(error);
 }
 
 void NtfyDBusService::setDeliveryController(NtfyDeliveryController *delivery)
@@ -117,9 +136,36 @@ void NtfyDBusService::replyError(const QString &error)
         sendErrorReply(QDBusError::InvalidArgs, error);
 }
 
+bool NtfyDBusService::unlocked()
+{
+    if (m_manager)
+        return true;
+    if (calledFromDBus())
+        sendErrorReply(QString::fromLatin1(NtfyDBus::LockedError),
+                       QStringLiteral("locked until the device lock code is entered"));
+    return false;
+}
+
+bool NtfyDBusService::Locked()
+{
+    return !m_manager;
+}
+
+void NtfyDBusService::Unlock()
+{
+    if (m_manager)
+        return;
+    QTimer::singleShot(0, this, [this]() {
+        if (!m_manager)
+            emit unlockRequested();
+    });
+}
+
 qlonglong NtfyDBusService::AddServer(const QString &url, const QString &token, const QString &username,
                                      const QString &password)
 {
+    if (!unlocked())
+        return 0;
     QString error;
     const qint64 id = m_manager->addServer(QUrl(url), token, username, password, &error);
     if (!id)
@@ -129,6 +175,8 @@ qlonglong NtfyDBusService::AddServer(const QString &url, const QString &token, c
 
 void NtfyDBusService::RemoveServer(qlonglong serverId)
 {
+    if (!unlocked())
+        return;
     QString error;
     if (!m_manager->removeServer(serverId, &error))
         replyError(error);
@@ -136,6 +184,8 @@ void NtfyDBusService::RemoveServer(qlonglong serverId)
 
 QString NtfyDBusService::Servers()
 {
+    if (!unlocked())
+        return QString();
     QJsonArray array;
     for (const NtfyServerRecord &server : m_manager->database()->servers()) {
         QJsonObject obj;
@@ -150,6 +200,8 @@ QString NtfyDBusService::Servers()
 
 qlonglong NtfyDBusService::AddSubscription(qlonglong serverId, const QString &topic, const QString &displayName)
 {
+    if (!unlocked())
+        return 0;
     QString error;
     const qint64 id = m_manager->addSubscription(serverId, topic, displayName, &error);
     if (!id)
@@ -159,6 +211,8 @@ qlonglong NtfyDBusService::AddSubscription(qlonglong serverId, const QString &to
 
 void NtfyDBusService::RemoveSubscription(qlonglong subscriptionId)
 {
+    if (!unlocked())
+        return;
     QString error;
     if (!m_manager->removeSubscription(subscriptionId, &error))
         replyError(error);
@@ -166,18 +220,25 @@ void NtfyDBusService::RemoveSubscription(qlonglong subscriptionId)
 
 void NtfyDBusService::SetMuted(qlonglong subscriptionId, bool muted)
 {
+    if (!unlocked())
+        return;
     if (!m_manager->setMuted(subscriptionId, muted))
         replyError(QStringLiteral("no such subscription"));
 }
 
 void NtfyDBusService::MarkRead(qlonglong subscriptionId)
 {
+    if (!unlocked())
+        return;
     if (!m_manager->markRead(subscriptionId))
         replyError(QStringLiteral("could not mark as read"));
 }
 
 QString NtfyDBusService::Subscriptions()
 {
+    if (!unlocked())
+        return QString();
+
     QHash<qint64, QString> serverUrls;
     for (const NtfyServerRecord &server : m_manager->database()->servers())
         serverUrls.insert(server.id, server.url.toString());
@@ -200,6 +261,8 @@ QString NtfyDBusService::Subscriptions()
 
 QString NtfyDBusService::Messages(qlonglong subscriptionId, int limit, qlonglong beforeId)
 {
+    if (!unlocked())
+        return QString();
     QJsonArray array;
     for (const NtfyStoredMessage &message : m_manager->database()->messages(subscriptionId, qBound(1, limit, 500), beforeId))
         array.append(messageJson(message));
@@ -208,6 +271,8 @@ QString NtfyDBusService::Messages(qlonglong subscriptionId, int limit, qlonglong
 
 QString NtfyDBusService::Delivery()
 {
+    if (!unlocked())
+        return QString();
     if (!m_delivery) {
         replyError(QStringLiteral("delivery settings are not available"));
         return QString();
@@ -234,6 +299,8 @@ QString NtfyDBusService::Delivery()
 
 void NtfyDBusService::SetDelivery(const QString &mode, int intervalSeconds)
 {
+    if (!unlocked())
+        return;
     NtfyDeliveryController::Mode parsed;
     if (!m_delivery) {
         replyError(QStringLiteral("delivery settings are not available"));
@@ -250,6 +317,8 @@ void NtfyDBusService::SetDelivery(const QString &mode, int intervalSeconds)
 
 QString NtfyDBusService::DeliveryStats()
 {
+    if (!unlocked())
+        return QString();
     if (!m_delivery) {
         replyError(QStringLiteral("delivery settings are not available"));
         return QString();
@@ -267,6 +336,8 @@ QString NtfyDBusService::DeliveryStats()
 
 int NtfyDBusService::RunAction(qlonglong messageId, int actionIndex)
 {
+    if (!unlocked())
+        return 0;
     const NtfyStoredMessage message = m_manager->database()->message(messageId);
     if (!message.isValid() || actionIndex < 0 || actionIndex >= message.event.actions.size()) {
         replyError(QStringLiteral("no such action"));
@@ -293,11 +364,15 @@ int NtfyDBusService::RunAction(qlonglong messageId, int actionIndex)
 
 void NtfyDBusService::NotificationActivated(qlonglong subscriptionId)
 {
+    if (!unlocked())
+        return;
     m_manager->markRead(subscriptionId);
     emit notificationActivated(subscriptionId);
 }
 
 void NtfyDBusService::ReconnectAll()
 {
+    if (!unlocked())
+        return;
     m_manager->reconnectAll();
 }

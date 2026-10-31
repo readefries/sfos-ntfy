@@ -98,7 +98,8 @@ bool NtfySecretsCredentialStore::load(const QString &key, QByteArray *secret, bo
     StoredSecretRequest request;
     request.setManager(m_manager.data());
     request.setIdentifier(Secret::Identifier(key, m_collectionName, storagePlugin()));
-    request.setUserInteractionMode(SecretManager::PreventInteraction);
+    request.setUserInteractionMode(m_interactive ? SecretManager::SystemInteraction
+                                                 : SecretManager::PreventInteraction);
 
     Result::ErrorCode code = Result::NoError;
     if (!run(request, &code, error))
