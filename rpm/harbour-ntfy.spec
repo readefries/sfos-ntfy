@@ -71,7 +71,14 @@ debugging; it doesn't use the app's subscriptions or logins.
 %make_build
 
 %check
-make check
+# The D-Bus tests need a session bus, a private one. Where none can be started (the SDK's build
+# engine has no passwd entry for our uid) they skip.
+if dbus-run-session -- true 2>/dev/null; then
+    dbus-run-session -- make check
+else
+    echo "no session bus for the tests, the D-Bus ones will skip"
+    make check
+fi
 desktop-file-validate %{buildroot}%{_datadir}/applications/%{name}.desktop || :
 
 %install
