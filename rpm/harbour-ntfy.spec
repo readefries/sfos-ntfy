@@ -80,6 +80,25 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/%{name}.desktop || :
 mkdir -p %{buildroot}%{_prefix}/lib/systemd/user/post-user-session.target.wants
 ln -s ../harbour-ntfy-daemon.service %{buildroot}%{_prefix}/lib/systemd/user/post-user-session.target.wants/
 
+# The daemon runs in the user's session, out of reach of plain systemctl here (we run as root):
+# systemctl-user finds that session. Without the restart an update only takes effect after a
+# reboot. A fresh install doesn't start it: opening the app does (D-Bus activation).
+%post
+if [ "$1" -ge 1 ]; then
+    systemctl-user daemon-reload || :
+    systemctl-user try-restart harbour-ntfy-daemon.service || :
+fi
+
+%preun
+if [ "$1" -eq 0 ]; then
+    systemctl-user stop harbour-ntfy-daemon.service || :
+fi
+
+%postun
+if [ "$1" -eq 0 ]; then
+    systemctl-user daemon-reload || :
+fi
+
 %files
 %license %{_datadir}/licenses/%{name}/LICENSE
 %{_bindir}/%{name}

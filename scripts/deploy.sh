@@ -37,4 +37,5 @@ for rpm in "$@"; do
 done
 echo
 echo "Copied$names to $host. On the phone:"
-echo "  devel-su pkcon install-local$names && systemctl --user restart harbour-ntfy-daemon"
+echo "  devel-su pkcon install-local$names"
+echo "(The package restarts the daemon itself.)"
