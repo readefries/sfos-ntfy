@@ -76,6 +76,7 @@ void NtfyDBusService::setManager(NtfySubscriptionManager *manager)
 
 void NtfyDBusService::unlockFailed(const QString &error)
 {
+    m_unlocking = false;
     emit UnlockFailed(error);
 }
 
@@ -153,8 +154,9 @@ bool NtfyDBusService::Locked()
 
 void NtfyDBusService::Unlock()
 {
-    if (m_manager)
+    if (m_manager || m_unlocking)
         return;
+    m_unlocking = true;
     QTimer::singleShot(0, this, [this]() {
         if (!m_manager)
             emit unlockRequested();

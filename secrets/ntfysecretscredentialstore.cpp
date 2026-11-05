@@ -98,8 +98,7 @@ bool NtfySecretsCredentialStore::load(const QString &key, QByteArray *secret, bo
     StoredSecretRequest request;
     request.setManager(m_manager.data());
     request.setIdentifier(Secret::Identifier(key, m_collectionName, storagePlugin()));
-    request.setUserInteractionMode(m_interactive ? SecretManager::SystemInteraction
-                                                 : SecretManager::PreventInteraction);
+    request.setUserInteractionMode(SecretManager::PreventInteraction);
 
     Result::ErrorCode code = Result::NoError;
     if (!run(request, &code, error))
@@ -108,6 +107,37 @@ bool NtfySecretsCredentialStore::load(const QString &key, QByteArray *secret, bo
     *found = true;
     *secret = request.secret().data();
     return true;
+}
+
+void NtfySecretsCredentialStore::unlock(const QString &key, const std::function<void(bool, const QString &)> &done)
+{
+    QString error;
+    if (!ensureCollection(&error)) {
+        done(false, error);
+        return;
+    }
+
+    // Started, not waited for (unlike run()): waitForFinished() doesn't run the event loop, so
+    // the whole process would stand still, D-Bus calls unanswered, while the prompt is up.
+    StoredSecretRequest *request = new StoredSecretRequest;
+    request->setManager(m_manager.data());
+    request->setIdentifier(Secret::Identifier(key, m_collectionName, storagePlugin()));
+    request->setUserInteractionMode(SecretManager::SystemInteraction);
+    // The request itself is the context: the connection goes with it.
+    QObject::connect(request, &Request::statusChanged, request, [request, done]() {
+        if (request->status() != Request::Finished)
+            return;
+        // Set before statusChanged() is emitted.
+        const Result result = request->result();
+        // Not delete: we're inside one of its signals.
+        request->deleteLater();
+        // Not finding the key also means the collection was opened.
+        if (result.code() == Result::Succeeded || result.errorCode() == Result::InvalidSecretError)
+            done(true, QString());
+        else
+            done(false, result.errorMessage());
+    });
+    request->startRequest();
 }
 
 bool NtfySecretsCredentialStore::remove(const QString &key, QString *error)

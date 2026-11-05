@@ -1183,10 +1183,21 @@ void TestService::dbusLocked()
     QCOMPARE(reply.type(), QDBusMessage::ReplyMessage);
     QTRY_COMPARE(requested.count(), 1);
 
+    // One prompt at a time: asking again while it's up changes nothing.
+    reply = callAsync(client, QStringLiteral("Unlock"));
+    QCOMPARE(reply.type(), QDBusMessage::ReplyMessage);
+    QCoreApplication::processEvents();
+    QCOMPARE(requested.count(), 1);
+
     QSignalSpy failed(&service, &NtfyDBusService::UnlockFailed);
     service.unlockFailed(QStringLiteral("cancelled"));
     QCOMPARE(failed.count(), 1);
     QCOMPARE(failed.at(0).at(0).toString(), QStringLiteral("cancelled"));
+
+    // After that, it's worth another try.
+    reply = callAsync(client, QStringLiteral("Unlock"));
+    QCOMPARE(reply.type(), QDBusMessage::ReplyMessage);
+    QTRY_COMPARE(requested.count(), 2);
 
     NtfyDatabase db;
     QVERIFY(db.open(QStringLiteral(":memory:")));
@@ -1210,7 +1221,7 @@ void TestService::dbusLocked()
     reply = callAsync(client, QStringLiteral("Unlock"));
     QCOMPARE(reply.type(), QDBusMessage::ReplyMessage);
     QCoreApplication::processEvents();
-    QCOMPARE(requested.count(), 1);
+    QCOMPARE(requested.count(), 2);
 
     QDBusConnection::disconnectFromBus(QStringLiteral("client"));
     QDBusConnection::sessionBus().unregisterService(QString::fromLatin1(NtfyDBus::ServiceName));

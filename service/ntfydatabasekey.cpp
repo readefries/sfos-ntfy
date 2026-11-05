@@ -22,6 +22,11 @@ bool randomBytes(int size, QByteArray *bytes)
 }
 } // namespace
 
+QString ntfyDatabaseKeyName()
+{
+    return KeyName;
+}
+
 bool ntfyDatabaseKey(NtfyCredentialStore *store, QByteArray *key, bool *created, QString *error)
 {
     *created = false;

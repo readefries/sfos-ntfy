@@ -11,6 +11,9 @@ class NtfyDatabase;
 // The daemon database is encrypted with a random key that lives next to the credentials (on the
 // device: in Sailfish Secrets, unavailable after a reboot until the collection is unlocked).
 
+// The name it's stored under.
+QString ntfyDatabaseKeyName();
+
 // Loads the key, creating and storing a new one on first use. Fails if the store can't be read,
 // e.g. while Secrets is still locked; the daemon then waits for the UI to unlock it.
 bool ntfyDatabaseKey(NtfyCredentialStore *store, QByteArray *key, bool *created, QString *error = nullptr);

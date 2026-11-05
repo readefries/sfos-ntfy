@@ -53,7 +53,7 @@ public:
 public slots:
     Q_SCRIPTABLE bool Locked();
     // Replies right away, then asks the daemon to unlock (see unlockRequested()). The outcome
-    // comes as LockedChanged() or UnlockFailed().
+    // comes as LockedChanged() or UnlockFailed(). Calls while that's under way change nothing.
     Q_SCRIPTABLE void Unlock();
 
     Q_SCRIPTABLE qlonglong AddServer(const QString &url, const QString &token, const QString &username,
@@ -98,8 +98,9 @@ signals:
 
     // Local only, not exported.
     void notificationActivated(qlonglong subscriptionId);
-    // Emitted from the event loop, after Unlock() replied: unlocking blocks until the user has
-    // answered the prompt, longer than a D-Bus caller waits.
+    // Emitted from the event loop, after Unlock() replied. Once per attempt: the next one only
+    // after unlockFailed(); otherwise every Unlock() that came in meanwhile would bring up a
+    // prompt of its own.
     void unlockRequested();
 
 private:
@@ -110,6 +111,7 @@ private:
     NtfySubscriptionManager *m_manager;
     NtfyDeliveryController *m_delivery = nullptr;
     NtfyActionRunner *m_actions = nullptr;
+    bool m_unlocking = false;
 };
 
 #endif // NTFYDBUSSERVICE_H

@@ -183,17 +183,16 @@ int main(int argc, char *argv[])
     }
 
     QObject::connect(&service, &NtfyDBusService::unlockRequested, [&]() {
-        // Shows the prompt, and blocks until it's answered.
-        QByteArray key;
-        bool newKey = false;
-        QString error;
-        credentials.setInteractive(true);
-        const bool unlocked = ntfyDatabaseKey(&credentials, &key, &newKey, &error);
-        credentials.setInteractive(false);
-        if (!unlocked || !start(key, newKey, &error)) {
-            qCWarning(lcDaemon, "could not unlock: %s", qPrintable(error));
-            service.unlockFailed(error);
-        }
+        // Shows the prompt; we keep answering D-Bus calls (Locked() says true) until it's answered.
+        credentials.unlock(ntfyDatabaseKeyName(), [&](bool ok, QString error) {
+            QByteArray key;
+            bool newKey = false;
+            // The collection stays unlocked now, so this doesn't prompt.
+            if (!ok || !ntfyDatabaseKey(&credentials, &key, &newKey, &error) || !start(key, newKey, &error)) {
+                qCWarning(lcDaemon, "could not unlock: %s", qPrintable(error));
+                service.unlockFailed(error);
+            }
+        });
     });
 
     if (!service.registerOn(QDBusConnection::sessionBus(), &error)) {
