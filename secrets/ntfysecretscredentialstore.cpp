@@ -149,6 +149,9 @@ bool NtfySecretsCredentialStore::load(const QString &key, QByteArray *secret, bo
 
 void NtfySecretsCredentialStore::unlock(const QString &key, const std::function<void(bool, const QString &)> &done)
 {
+    // Asked again, without a prompt, also when known: a request that finds the connection gone
+    // gets a new one here, before the interactive request depends on it.
+    m_collectionReady = false;
     QString error;
     if (!withConnection([&]() { return ensureCollection(&error); })) {
         done(false, error);
