@@ -87,6 +87,10 @@ void NtfyDaemonClient::connectSignals()
                          this, SIGNAL(serverStateChanged(qlonglong,QString)));
     m_connection.connect(ServiceName, ObjectPath, Interface, QStringLiteral("MessageReceived"),
                          this, SLOT(onMessageReceived(qlonglong,QString)));
+    m_connection.connect(ServiceName, ObjectPath, Interface, QStringLiteral("MessageRemoved"),
+                         this, SIGNAL(messageRemoved(qlonglong,qlonglong)));
+    m_connection.connect(ServiceName, ObjectPath, Interface, QStringLiteral("MessagesCleared"),
+                         this, SIGNAL(messagesCleared(qlonglong)));
     m_connection.connect(ServiceName, ObjectPath, Interface, QStringLiteral("LockedChanged"),
                          this, SLOT(onLockedChanged(bool)));
     m_connection.connect(ServiceName, ObjectPath, Interface, QStringLiteral("UnlockFailed"),
@@ -219,6 +223,16 @@ void NtfyDaemonClient::setMuted(qlonglong subscriptionId, bool muted)
 void NtfyDaemonClient::markRead(qlonglong subscriptionId)
 {
     callThen(QStringLiteral("MarkRead"), QVariantList() << subscriptionId, nullptr);
+}
+
+void NtfyDaemonClient::removeMessage(qlonglong messageId)
+{
+    callThen(QStringLiteral("RemoveMessage"), QVariantList() << messageId, nullptr);
+}
+
+void NtfyDaemonClient::clearMessages(qlonglong subscriptionId)
+{
+    callThen(QStringLiteral("ClearMessages"), QVariantList() << subscriptionId, nullptr);
 }
 
 void NtfyDaemonClient::removeServer(qlonglong serverId)

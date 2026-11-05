@@ -64,6 +64,16 @@ Page {
             title: page.title
         }
 
+        PullDownMenu {
+            visible: list.count > 0
+            MenuItem {
+                text: qsTr("Clear messages")
+                onClicked: clearRemorse.execute(qsTr("Clearing messages"), function() {
+                    daemon.clearMessages(page.subscriptionId)
+                })
+            }
+        }
+
         ViewPlaceholder {
             enabled: list.count === 0 && !messageModel.loading
             text: qsTr("No messages yet")
@@ -96,6 +106,13 @@ Page {
                     visible: model.click.length > 0
                     text: qsTr("Copy link")
                     onClicked: Clipboard.text = model.click
+                }
+                MenuItem {
+                    text: qsTr("Remove")
+                    onClicked: {
+                        var id = item.rowId
+                        item.remorseAction(qsTr("Removing"), function() { daemon.removeMessage(id) })
+                    }
                 }
             }
 
@@ -194,4 +211,8 @@ Page {
 
         VerticalScrollDecorator { }
     }
+
+    // On the page, not in the list (it would scroll away with the messages), and after it, so
+    // it's drawn on top.
+    RemorsePopup { id: clearRemorse }
 }

@@ -37,6 +37,9 @@ public:
     Q_INVOKABLE void unsubscribe(qlonglong subscriptionId);
     Q_INVOKABLE void setMuted(qlonglong subscriptionId, bool muted);
     Q_INVOKABLE void markRead(qlonglong subscriptionId);
+    // From this device only. Followed by messageRemoved() / messagesCleared(), or failed().
+    Q_INVOKABLE void removeMessage(qlonglong messageId);
+    Q_INVOKABLE void clearMessages(qlonglong subscriptionId);
     Q_INVOKABLE void removeServer(qlonglong serverId);
     // Replaces a server's login; all empty removes it. Emits serverUpdated() or failed().
     Q_INVOKABLE void updateServer(const QString &serverUrl, const QString &token, const QString &username,
@@ -71,6 +74,8 @@ signals:
     // Forwarded from the daemon.
     void subscriptionsChanged();
     void messageReceived(qlonglong subscriptionId, const QJsonObject &message);
+    void messageRemoved(qlonglong subscriptionId, qlonglong messageId);
+    void messagesCleared(qlonglong subscriptionId);
     void deliveryChanged();
     void serverError(qlonglong serverId, const QString &error);
     void serverStateChanged(qlonglong serverId, const QString &state);

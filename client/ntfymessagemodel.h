@@ -8,8 +8,8 @@
 #include <QAbstractListModel>
 #include <QPointer>
 
-// Message history of one subscription, newest first. New messages are added as they arrive;
-// older ones are paged in with loadMore().
+// Message history of one subscription, newest first. New messages are added as they arrive,
+// removed ones go; older ones are paged in with loadMore().
 class NtfyMessageModel : public QAbstractListModel
 {
     Q_OBJECT
@@ -73,6 +73,8 @@ private:
 
     void onMessagesLoaded(qlonglong subscriptionId, qlonglong beforeId, const QJsonArray &messages);
     void onMessageReceived(qlonglong subscriptionId, const QJsonObject &message);
+    void onMessageRemoved(qlonglong subscriptionId, qlonglong messageId);
+    void onMessagesCleared(qlonglong subscriptionId);
     void setLoading(bool loading);
     void setCanLoadMore(bool canLoadMore);
     static Item itemFromJson(const QJsonObject &message);

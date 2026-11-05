@@ -26,6 +26,8 @@ void NtfyMessageModel::setClient(NtfyDaemonClient *client)
     if (m_client) {
         connect(m_client, &NtfyDaemonClient::messagesLoaded, this, &NtfyMessageModel::onMessagesLoaded);
         connect(m_client, &NtfyDaemonClient::messageReceived, this, &NtfyMessageModel::onMessageReceived);
+        connect(m_client, &NtfyDaemonClient::messageRemoved, this, &NtfyMessageModel::onMessageRemoved);
+        connect(m_client, &NtfyDaemonClient::messagesCleared, this, &NtfyMessageModel::onMessagesCleared);
     }
     emit clientChanged();
     reload();
@@ -103,6 +105,32 @@ void NtfyMessageModel::onMessageReceived(qlonglong subscriptionId, const QJsonOb
     m_items.prepend(item);
     endInsertRows();
     emit countChanged();
+}
+
+void NtfyMessageModel::onMessageRemoved(qlonglong subscriptionId, qlonglong messageId)
+{
+    if (subscriptionId != m_subscriptionId)
+        return;
+    for (int row = 0; row < m_items.size(); ++row) {
+        if (m_items.at(row).rowId == messageId) {
+            beginRemoveRows(QModelIndex(), row, row);
+            m_items.removeAt(row);
+            endRemoveRows();
+            emit countChanged();
+            return;
+        }
+    }
+}
+
+void NtfyMessageModel::onMessagesCleared(qlonglong subscriptionId)
+{
+    if (subscriptionId != m_subscriptionId || m_items.isEmpty())
+        return;
+    beginResetModel();
+    m_items.clear();
+    endResetModel();
+    emit countChanged();
+    setCanLoadMore(false);
 }
 
 void NtfyMessageModel::setLoading(bool loading)

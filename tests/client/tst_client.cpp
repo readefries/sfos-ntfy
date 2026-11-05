@@ -57,6 +57,7 @@ private slots:
     void messageModelLoadsAndPages();
     void messageModelAddsNewMessages();
     void messageModelAttachments();
+    void messageModelRemovesMessages();
     void serversAndLogins();
     void unlockFromTheApp();
     void lockedWhileUnanswered();
@@ -274,6 +275,34 @@ void TestClient::messageModelAttachments()
     QVERIFY(model.data(model.index(0), NtfyMessageModel::AttachmentExpiredRole).toBool());
     QCOMPARE(model.data(model.index(1), NtfyMessageModel::AttachmentSizeRole).toLongLong(), qint64(6000));
     QVERIFY(!model.data(model.index(1), NtfyMessageModel::AttachmentExpiredRole).toBool());
+}
+
+void TestClient::messageModelRemovesMessages()
+{
+    const qint64 sub = addSubscription();
+    const qint64 first = m_db->addMessage(sub, message(QStringLiteral("m1"), 100));
+    m_db->addMessage(sub, message(QStringLiteral("m2"), 200));
+    m_db->addMessage(sub, message(QStringLiteral("m3"), 300));
+
+    NtfyMessageModel model;
+    model.setClient(m_client);
+    model.setSubscriptionId(sub);
+    QTRY_COMPARE_WITH_TIMEOUT(model.rowCount(), 3, 5000);
+
+    QSignalSpy failed(m_client, &NtfyDaemonClient::failed);
+    m_client->removeMessage(first);
+    QTRY_COMPARE_WITH_TIMEOUT(model.rowCount(), 2, 5000);
+    QCOMPARE(model.data(model.index(1), NtfyMessageModel::MessageIdRole).toString(), QStringLiteral("m2"));
+    QCOMPARE(m_db->messages(sub, 10).size(), 2);
+
+    m_client->removeMessage(first); // not there any more
+    QTRY_COMPARE_WITH_TIMEOUT(failed.count(), 1, 5000);
+    QCOMPARE(failed.at(0).at(0).toString(), QStringLiteral("no such message"));
+
+    m_client->clearMessages(sub);
+    QTRY_COMPARE_WITH_TIMEOUT(model.rowCount(), 0, 5000);
+    QVERIFY(!model.canLoadMore());
+    QVERIFY(m_db->messages(sub, 10).isEmpty());
 }
 
 void TestClient::serversAndLogins()
