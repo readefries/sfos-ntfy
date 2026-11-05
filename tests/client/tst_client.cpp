@@ -58,6 +58,8 @@ private slots:
     void messageModelAddsNewMessages();
     void messageModelAttachments();
     void serversAndLogins();
+    void unlockFromTheApp();
+    void lockedWhileUnanswered();
 
 private:
     qint64 addSubscription(const QString &url = QStringLiteral("https://ntfy.sh"));
@@ -305,6 +307,53 @@ void TestClient::serversAndLogins()
     m_client->removeServer(serverId);
     QTRY_COMPARE_WITH_TIMEOUT(changed.count(), 1, 5000);
     QVERIFY(m_db->servers().isEmpty());
+}
+
+void TestClient::unlockFromTheApp()
+{
+    // A locked daemon instead of the one from init().
+    QDBusConnection::sessionBus().unregisterService(QString::fromLatin1(NtfyDBus::ServiceName));
+    QDBusConnection::sessionBus().unregisterObject(QString::fromLatin1(NtfyDBus::ObjectPath));
+    NtfyDBusService locked;
+    QString error;
+    QVERIFY2(locked.registerOn(QDBusConnection::sessionBus(), &error), qPrintable(error));
+    {
+        NtfyDaemonClient client(QDBusConnection::connectToBus(QDBusConnection::SessionBus, QStringLiteral("locked-ui")));
+        QTRY_VERIFY_WITH_TIMEOUT(client.isLocked(), 5000);
+
+        QSignalSpy requested(&locked, &NtfyDBusService::unlockRequested);
+        client.unlock();
+        QVERIFY(client.isUnlocking());
+        QTRY_COMPARE_WITH_TIMEOUT(requested.count(), 1, 5000);
+        // Still waiting for the prompt, also after asking Locked() again.
+        QTest::qWait(200);
+        QVERIFY(client.isLocked());
+        QVERIFY(client.isUnlocking());
+
+        locked.setManager(m_manager);
+        QTRY_VERIFY_WITH_TIMEOUT(!client.isLocked(), 5000);
+        QVERIFY(!client.isUnlocking());
+    }
+    QDBusConnection::disconnectFromBus(QStringLiteral("locked-ui"));
+}
+
+void TestClient::lockedWhileUnanswered()
+{
+    // No daemon to answer Locked().
+    QDBusConnection::sessionBus().unregisterService(QString::fromLatin1(NtfyDBus::ServiceName));
+    {
+        NtfyDaemonClient client(QDBusConnection::connectToBus(QDBusConnection::SessionBus, QStringLiteral("unanswered-ui")));
+        QTRY_VERIFY_WITH_TIMEOUT(client.isLocked(), 5000);
+
+        // Unlock on a daemon that turns out not to be locked: no signal says so, Locked() does.
+        QVERIFY(QDBusConnection::sessionBus().registerService(QString::fromLatin1(NtfyDBus::ServiceName)));
+        QSignalSpy failed(&client, &NtfyDaemonClient::unlockFailed);
+        client.unlock();
+        QTRY_VERIFY_WITH_TIMEOUT(!client.isLocked(), 5000);
+        QVERIFY(!client.isUnlocking());
+        QCOMPARE(failed.count(), 0);
+    }
+    QDBusConnection::disconnectFromBus(QStringLiteral("unanswered-ui"));
 }
 
 QTEST_GUILESS_MAIN(TestClient)

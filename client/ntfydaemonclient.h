@@ -86,6 +86,8 @@ private:
     void callThen(const QString &method, const QVariantList &arguments,
                   const std::function<void(const QVariant &)> &onReply);
     void connectSignals();
+    // Asks the daemon whether it's locked, and sets locked accordingly.
+    void queryLocked();
     void setLocked(bool locked);
     void setUnlocking(bool unlocking);
 

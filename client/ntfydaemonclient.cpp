@@ -15,6 +15,7 @@ const QString ServiceName = QStringLiteral("nl.readefries.harbourntfy");
 const QString ObjectPath = QStringLiteral("/");
 const QString Interface = QStringLiteral("nl.readefries.harbourntfy.Daemon");
 const QString LockedError = QStringLiteral("nl.readefries.harbourntfy.Error.Locked");
+const QString UnknownMethodError = QStringLiteral("org.freedesktop.DBus.Error.UnknownMethod");
 
 QJsonArray parseArray(const QVariant &value)
 {
@@ -32,14 +33,29 @@ NtfyDaemonClient::NtfyDaemonClient(const QDBusConnection &connection, QObject *p
     , m_connection(connection)
 {
     connectSignals();
+    queryLocked();
+}
 
-    // Not via callThen(): an older daemon without Locked() is simply unlocked.
+void NtfyDaemonClient::queryLocked()
+{
+    // Not via callThen(): failing means something else here.
     QDBusPendingCallWatcher *watcher = new QDBusPendingCallWatcher(call(QStringLiteral("Locked")), this);
     connect(watcher, &QDBusPendingCallWatcher::finished, this, [this](QDBusPendingCallWatcher *watcher) {
         watcher->deleteLater();
         const QDBusMessage reply = watcher->reply();
-        if (reply.type() == QDBusMessage::ReplyMessage)
-            setLocked(reply.arguments().value(0).toBool());
+        if (reply.type() == QDBusMessage::ReplyMessage) {
+            const bool locked = reply.arguments().value(0).toBool();
+            if (!locked)
+                setUnlocking(false);
+            setLocked(locked);
+        } else if (reply.errorName() == UnknownMethodError) {
+            // An older daemon, which is never locked.
+            setLocked(false);
+        } else {
+            // No answer, e.g. a timeout. Rather than a UI that can't load anything, the locked
+            // page: its Unlock asks again.
+            setLocked(true);
+        }
     });
 }
 
@@ -102,7 +118,10 @@ void NtfyDaemonClient::unlock()
         if (reply.type() == QDBusMessage::ErrorMessage) {
             setUnlocking(false);
             emit unlockFailed(reply.errorMessage());
+            return;
         }
+        // A daemon that isn't locked (any more) does nothing, and says nothing about it either.
+        queryLocked();
     });
 }
 
