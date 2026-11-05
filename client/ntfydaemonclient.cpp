@@ -6,6 +6,7 @@
 #include <QDBusMessage>
 #include <QDBusPendingCallWatcher>
 #include <QDBusPendingReply>
+#include <QDBusServiceWatcher>
 #include <QJsonDocument>
 #include <QUrl>
 
@@ -34,6 +35,21 @@ NtfyDaemonClient::NtfyDaemonClient(const QDBusConnection &connection, QObject *p
 {
     connectSignals();
     queryLocked();
+
+    // A restarted daemon starts over: whatever unlocking was under way is gone, it may or may
+    // not be locked, and the signals it sent while starting reached nobody (they come before it
+    // has our name).
+    QDBusServiceWatcher *watcher = new QDBusServiceWatcher(ServiceName, m_connection,
+                                                           QDBusServiceWatcher::WatchForOwnerChange, this);
+    connect(watcher, &QDBusServiceWatcher::serviceOwnerChanged, this,
+            [this](const QString &, const QString &, const QString &newOwner) {
+        setUnlocking(false);
+        if (newOwner.isEmpty())
+            return;
+        queryLocked();
+        emit subscriptionsChanged();
+        emit deliveryChanged();
+    });
 }
 
 void NtfyDaemonClient::queryLocked()
