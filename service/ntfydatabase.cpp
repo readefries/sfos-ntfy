@@ -15,7 +15,7 @@
 
 namespace {
 
-const int SchemaVersion = 2;
+const int SchemaVersion = 3;
 
 QAtomicInt connectionCounter;
 
@@ -268,6 +268,10 @@ bool NtfyDatabase::migrate()
     if (ok && version < 2) {
         ok = exec(QStringLiteral("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)"));
     }
+    if (ok && version < 3) {
+        // See removeMessage().
+        ok = exec(QStringLiteral("ALTER TABLE messages ADD COLUMN removed INTEGER NOT NULL DEFAULT 0"));
+    }
     ok = ok && exec(QStringLiteral("PRAGMA user_version = %1").arg(SchemaVersion));
     if (!ok) {
         const QString error = m_error;
@@ -375,8 +379,9 @@ QList<NtfySubscriptionRecord> NtfyDatabase::subscriptions(qint64 serverId) const
     QSqlQuery query(connection(m_connectionName));
     query.prepare(QStringLiteral(
             "SELECT s.id, s.server_id, s.topic, s.display_name, s.muted,"
-            " (SELECT COUNT(*) FROM messages m WHERE m.subscription_id = s.id AND m.read = 0),"
-            " (SELECT m.event FROM messages m WHERE m.subscription_id = s.id ORDER BY m.id DESC LIMIT 1)"
+            " (SELECT COUNT(*) FROM messages m WHERE m.subscription_id = s.id AND m.removed = 0 AND m.read = 0),"
+            " (SELECT m.event FROM messages m WHERE m.subscription_id = s.id AND m.removed = 0"
+            "  ORDER BY m.id DESC LIMIT 1)"
             " FROM subscriptions s WHERE (? = 0 OR s.server_id = ?) ORDER BY s.id"));
     query.addBindValue(serverId);
     query.addBindValue(serverId);
@@ -431,7 +436,7 @@ QList<NtfyStoredMessage> NtfyDatabase::messages(qint64 subscriptionId, int limit
     QList<NtfyStoredMessage> result;
     QSqlQuery query(connection(m_connectionName));
     query.prepare(QStringLiteral(
-            "SELECT id, read, event FROM messages WHERE subscription_id = ? AND (? = 0 OR id < ?)"
+            "SELECT id, read, event FROM messages WHERE subscription_id = ? AND removed = 0 AND (? = 0 OR id < ?)"
             " ORDER BY id DESC LIMIT ?"));
     query.addBindValue(subscriptionId);
     query.addBindValue(beforeId);
@@ -456,7 +461,7 @@ NtfyStoredMessage NtfyDatabase::message(qint64 messageId) const
 {
     NtfyStoredMessage message;
     QSqlQuery query(connection(m_connectionName));
-    query.prepare(QStringLiteral("SELECT subscription_id, read, event FROM messages WHERE id = ?"));
+    query.prepare(QStringLiteral("SELECT subscription_id, read, event FROM messages WHERE id = ? AND removed = 0"));
     query.addBindValue(messageId);
     if (!query.exec()) {
         fail(QStringLiteral("read message"), query.lastError().text());
@@ -481,6 +486,44 @@ bool NtfyDatabase::markRead(qint64 subscriptionId)
     return true;
 }
 
+bool NtfyDatabase::removeMessage(qint64 messageId)
+{
+    QSqlQuery query(connection(m_connectionName));
+    query.prepare(QStringLiteral("UPDATE messages SET removed = 1, read = 1, event = '' WHERE id = ? AND removed = 0"));
+    query.addBindValue(messageId);
+    if (!query.exec())
+        return fail(QStringLiteral("remove message"), query.lastError().text());
+    const bool removed = query.numRowsAffected() > 0;
+    pruneRemoved();
+    return removed;
+}
+
+bool NtfyDatabase::clearMessages(qint64 subscriptionId)
+{
+    QSqlQuery query(connection(m_connectionName));
+    query.prepare(QStringLiteral(
+            "UPDATE messages SET removed = 1, read = 1, event = '' WHERE subscription_id = ? AND removed = 0"));
+    query.addBindValue(subscriptionId);
+    if (!query.exec())
+        return fail(QStringLiteral("clear messages"), query.lastError().text());
+    pruneRemoved();
+    return true;
+}
+
+int NtfyDatabase::pruneRemoved()
+{
+    // Only the newest second of a server matters: since= that time is where it resumes.
+    QSqlQuery query(connection(m_connectionName));
+    if (!query.exec(QStringLiteral(
+                "DELETE FROM messages WHERE removed = 1 AND time < ("
+                " SELECT MAX(n.time) FROM messages n JOIN subscriptions s ON s.id = n.subscription_id"
+                " WHERE s.server_id = (SELECT server_id FROM subscriptions WHERE id = messages.subscription_id))"))) {
+        fail(QStringLiteral("prune removed messages"), query.lastError().text());
+        return 0;
+    }
+    return query.numRowsAffected();
+}
+
 qint64 NtfyDatabase::newestMessageTime(qint64 serverId) const
 {
     QSqlQuery query(connection(m_connectionName));
@@ -500,14 +543,15 @@ int NtfyDatabase::pruneMessages(int keepPerSubscription)
     QSqlQuery query(connection(m_connectionName));
     query.prepare(QStringLiteral(
             "DELETE FROM messages WHERE id IN ("
-            " SELECT m.id FROM messages m WHERE"
-            "  (SELECT COUNT(*) FROM messages n WHERE n.subscription_id = m.subscription_id AND n.id > m.id) >= ?)"));
+            " SELECT m.id FROM messages m WHERE m.removed = 0 AND"
+            "  (SELECT COUNT(*) FROM messages n"
+            "   WHERE n.subscription_id = m.subscription_id AND n.removed = 0 AND n.id > m.id) >= ?)"));
     query.addBindValue(keepPerSubscription);
     if (!query.exec()) {
         fail(QStringLiteral("prune messages"), query.lastError().text());
         return 0;
     }
-    return query.numRowsAffected();
+    return query.numRowsAffected() + pruneRemoved();
 }
 
 QString NtfyDatabase::setting(const QString &key, const QString &defaultValue) const

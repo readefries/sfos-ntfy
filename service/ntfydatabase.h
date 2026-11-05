@@ -82,12 +82,20 @@ public:
     // One stored message by its row id; invalid if there's no such message.
     NtfyStoredMessage message(qint64 messageId) const;
     bool markRead(qint64 subscriptionId);
+    // Removes a message, false if there's no such message. Its row stays behind, emptied and
+    // hidden from everything above, while its server's stream resumes from its time: the server
+    // would send it again otherwise.
+    bool removeMessage(qint64 messageId);
+    // Likewise for all of a subscription's messages.
+    bool clearMessages(qint64 subscriptionId);
     // ntfy timestamp of the newest stored message of a server, or 0. Used to resume with since=.
+    // Includes removed messages, for that reason.
     qint64 newestMessageTime(qint64 serverId) const;
     // Where to resume a server from with since=: its newest stored message, or when its first
     // subscription was made if there are no messages yet (so nothing older shows up).
     qint64 resumeTime(qint64 serverId) const;
-    // Keeps the newest keepPerSubscription messages of every subscription. Returns how many went.
+    // Keeps the newest keepPerSubscription messages of every subscription, and the removed ones
+    // that still matter. Returns how many rows went.
     int pruneMessages(int keepPerSubscription);
 
     // Whether the SQLCipher driver (qt5-plugin-sqldriver-sqlcipher) is installed.
@@ -102,6 +110,8 @@ public:
 
 private:
     bool migrate();
+    // Drops the rows of removed messages that no longer matter. Returns how many went.
+    int pruneRemoved();
     bool exec(const QString &sql);
     bool fail(const QString &context, const QString &error) const;
 

@@ -111,6 +111,8 @@ private slots:
     void subscriptionsAndMessages();
     void removingServerCascades();
     void pruneKeepsNewest();
+    void removingMessages();
+    void migratesRemovedColumn();
     void databaseKeyCreatedOnce();
     void encryptedDatabase();
     void encryptsExistingDatabase();
@@ -269,6 +271,84 @@ void TestService::pruneKeepsNewest()
     QCOMPARE(left.at(0).event.id, QStringLiteral("a5"));
     QCOMPARE(left.at(1).event.id, QStringLiteral("a4"));
     QCOMPARE(db.messages(b, 10).size(), 1);
+}
+
+void TestService::removingMessages()
+{
+    NtfyDatabase db;
+    QVERIFY(db.open(QStringLiteral(":memory:")));
+    const qint64 server = db.addServer(QUrl(QStringLiteral("https://ntfy.sh")));
+    const qint64 a = db.addSubscription(server, QStringLiteral("a"), QString());
+    const qint64 b = db.addSubscription(server, QStringLiteral("b"), QString());
+    const qint64 m1 = db.addMessage(a, message(QStringLiteral("m1"), 100, QStringLiteral("a")));
+    const qint64 m2 = db.addMessage(a, message(QStringLiteral("m2"), 200, QStringLiteral("a")));
+    const qint64 m3 = db.addMessage(a, message(QStringLiteral("m3"), 200, QStringLiteral("a")));
+    db.addMessage(b, message(QStringLiteral("b1"), 150, QStringLiteral("b")));
+
+    QVERIFY(db.removeMessage(m3));
+    QVERIFY(!db.removeMessage(m3)); // gone already
+    QVERIFY(!db.message(m3).isValid());
+    QCOMPARE(db.messages(a, 10).size(), 2);
+    QCOMPARE(db.subscription(a).unreadCount, 2);
+    QCOMPARE(db.subscription(a).lastMessage.id, QStringLiteral("m2"));
+    // The stream still resumes after it, and when the server sends it again (since= is
+    // inclusive), it stays removed.
+    QCOMPARE(db.newestMessageTime(server), qint64(200));
+    QCOMPARE(db.addMessage(a, message(QStringLiteral("m3"), 200, QStringLiteral("a"))), qint64(0));
+
+    QVERIFY(db.clearMessages(a));
+    QVERIFY(db.messages(a, 10).isEmpty());
+    QVERIFY(!db.message(m1).isValid());
+    QCOMPARE(db.subscription(a).unreadCount, 0);
+    QVERIFY(!db.subscription(a).lastMessage.isValid());
+    QCOMPARE(db.newestMessageTime(server), qint64(200));
+    QCOMPARE(db.addMessage(a, message(QStringLiteral("m2"), 200, QStringLiteral("a"))), qint64(0));
+    QCOMPARE(db.messages(b, 10).size(), 1); // another topic
+
+    // Older removed rows don't matter: nothing from before 200 comes again.
+    QCOMPARE(db.pruneMessages(10), 0);
+    QVERIFY(db.addMessage(a, message(QStringLiteral("m1"), 100, QStringLiteral("a"))) > 0);
+    Q_UNUSED(m2)
+}
+
+void TestService::migratesRemovedColumn()
+{
+    // A database from before messages could be removed (schema version 2).
+    QTemporaryDir dir;
+    const QString path = dir.path() + QStringLiteral("/ntfy.db");
+    {
+        QSqlDatabase raw = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), QStringLiteral("raw"));
+        raw.setDatabaseName(path);
+        QVERIFY(raw.open());
+        QSqlQuery query(raw);
+        QVERIFY(query.exec(QStringLiteral("CREATE TABLE servers (id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                                          " url TEXT NOT NULL UNIQUE, created INTEGER NOT NULL DEFAULT 0)")));
+        QVERIFY(query.exec(QStringLiteral("CREATE TABLE subscriptions (id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                                          " server_id INTEGER NOT NULL, topic TEXT NOT NULL,"
+                                          " display_name TEXT NOT NULL DEFAULT '', muted INTEGER NOT NULL DEFAULT 0,"
+                                          " created INTEGER NOT NULL DEFAULT 0, UNIQUE (server_id, topic))")));
+        QVERIFY(query.exec(QStringLiteral("CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                                          " subscription_id INTEGER NOT NULL, message_id TEXT NOT NULL,"
+                                          " time INTEGER NOT NULL, read INTEGER NOT NULL DEFAULT 0,"
+                                          " event TEXT NOT NULL, UNIQUE (subscription_id, message_id))")));
+        QVERIFY(query.exec(QStringLiteral("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")));
+        QVERIFY(query.exec(QStringLiteral("INSERT INTO servers (url) VALUES ('https://ntfy.sh')")));
+        QVERIFY(query.exec(QStringLiteral("INSERT INTO subscriptions (server_id, topic) VALUES (1, 't')")));
+        QVERIFY(query.exec(QStringLiteral("INSERT INTO messages (subscription_id, message_id, time, event)"
+                                          " VALUES (1, 'm1', 100, '%1')")
+                           .arg(QString::fromUtf8(message(QStringLiteral("m1"), 100).toJson()))));
+        QVERIFY(query.exec(QStringLiteral("PRAGMA user_version = 2")));
+        raw.close();
+    }
+    QSqlDatabase::removeDatabase(QStringLiteral("raw"));
+
+    NtfyDatabase db;
+    QVERIFY2(db.open(path), qPrintable(db.lastError()));
+    const QList<NtfyStoredMessage> messages = db.messages(1, 10);
+    QCOMPARE(messages.size(), 1);
+    QCOMPARE(messages.at(0).event.id, QStringLiteral("m1"));
+    QVERIFY(db.removeMessage(messages.at(0).id));
+    QVERIFY(db.messages(1, 10).isEmpty());
 }
 
 void TestService::databaseKeyCreatedOnce()
@@ -1094,6 +1174,26 @@ void TestService::dbusService()
     QCOMPARE(db.subscription(sub).unreadCount, 0);
     QCOMPARE(read.count(), 1); // its notifications go
     QCOMPARE(read.at(0).at(0).toLongLong(), qint64(sub));
+
+    db.addMessage(sub, message(QStringLiteral("m2"), 200, QStringLiteral("alerts")));
+    const qlonglong newest = db.messages(sub, 1).at(0).id;
+    QSignalSpy removed(&service, &NtfyDBusService::MessageRemoved);
+    QSignalSpy cleared(&service, &NtfyDBusService::MessagesCleared);
+    reply = callAsync(client, QStringLiteral("RemoveMessage"), QVariantList() << qlonglong(9999));
+    QCOMPARE(reply.type(), QDBusMessage::ErrorMessage);
+    reply = callAsync(client, QStringLiteral("RemoveMessage"), QVariantList() << newest);
+    QCOMPARE(reply.type(), QDBusMessage::ReplyMessage);
+    QCOMPARE(removed.count(), 1);
+    QCOMPARE(removed.at(0).at(0).toLongLong(), sub);
+    QCOMPARE(removed.at(0).at(1).toLongLong(), newest);
+    QCOMPARE(db.messages(sub, 10).size(), 1);
+    reply = callAsync(client, QStringLiteral("ClearMessages"), QVariantList() << qlonglong(9999));
+    QCOMPARE(reply.type(), QDBusMessage::ErrorMessage);
+    reply = callAsync(client, QStringLiteral("ClearMessages"), QVariantList() << sub);
+    QCOMPARE(reply.type(), QDBusMessage::ReplyMessage);
+    QCOMPARE(cleared.count(), 1);
+    QCOMPARE(cleared.at(0).at(0).toLongLong(), sub);
+    QVERIFY(db.messages(sub, 10).isEmpty());
 
     reply = callAsync(client, QStringLiteral("RemoveServer"), QVariantList() << server);
     QCOMPARE(reply.type(), QDBusMessage::ReplyMessage);

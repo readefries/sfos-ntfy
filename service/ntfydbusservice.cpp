@@ -63,6 +63,8 @@ void NtfyDBusService::setManager(NtfySubscriptionManager *manager)
                              QString::fromUtf8(QJsonDocument(messageJson(message)).toJson(QJsonDocument::Compact)));
     });
     connect(m_manager, &NtfySubscriptionManager::subscriptionsChanged, this, &NtfyDBusService::SubscriptionsChanged);
+    connect(m_manager, &NtfySubscriptionManager::messageRemoved, this, &NtfyDBusService::MessageRemoved);
+    connect(m_manager, &NtfySubscriptionManager::messagesCleared, this, &NtfyDBusService::MessagesCleared);
     connect(m_manager, &NtfySubscriptionManager::serverStateChanged, this,
             [this](qint64 serverId, NtfyStream::State state) {
         emit ServerStateChanged(serverId, stateName(state));
@@ -234,6 +236,22 @@ void NtfyDBusService::MarkRead(qlonglong subscriptionId)
         return;
     if (!m_manager->markRead(subscriptionId))
         replyError(QStringLiteral("could not mark as read"));
+}
+
+void NtfyDBusService::RemoveMessage(qlonglong messageId)
+{
+    if (!unlocked())
+        return;
+    if (!m_manager->removeMessage(messageId))
+        replyError(QStringLiteral("no such message"));
+}
+
+void NtfyDBusService::ClearMessages(qlonglong subscriptionId)
+{
+    if (!unlocked())
+        return;
+    if (!m_manager->clearMessages(subscriptionId))
+        replyError(QStringLiteral("no such subscription"));
 }
 
 QString NtfyDBusService::Subscriptions()

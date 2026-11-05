@@ -49,6 +49,9 @@ public:
     bool removeSubscription(qint64 subscriptionId, QString *error = nullptr);
     bool setMuted(qint64 subscriptionId, bool muted);
     bool markRead(qint64 subscriptionId);
+    // Remove one stored message, or all of a subscription's (see NtfyDatabase::removeMessage()).
+    bool removeMessage(qint64 messageId);
+    bool clearMessages(qint64 subscriptionId);
 
     // Disconnected for servers without subscriptions.
     NtfyStream::State serverState(qint64 serverId) const;
@@ -76,6 +79,8 @@ signals:
     void subscriptionRead(qint64 subscriptionId);
     // Likewise, also for each subscription of a removed server.
     void subscriptionRemoved(qint64 subscriptionId);
+    void messageRemoved(qint64 subscriptionId, qint64 messageId);
+    void messagesCleared(qint64 subscriptionId);
     void pollFinished();
 
 private:

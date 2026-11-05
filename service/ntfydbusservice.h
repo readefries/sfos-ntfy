@@ -66,6 +66,9 @@ public slots:
     Q_SCRIPTABLE void RemoveSubscription(qlonglong subscriptionId);
     Q_SCRIPTABLE void SetMuted(qlonglong subscriptionId, bool muted);
     Q_SCRIPTABLE void MarkRead(qlonglong subscriptionId);
+    // Remove messages from this device; the server is not involved (and keeps them for a while).
+    Q_SCRIPTABLE void RemoveMessage(qlonglong messageId);
+    Q_SCRIPTABLE void ClearMessages(qlonglong subscriptionId);
     // [{"id", "serverId", "serverUrl", "topic", "displayName", "muted", "unread", "lastMessage"}]
     Q_SCRIPTABLE QString Subscriptions();
     // Newest first: [{"id", "read", "event"}], "event" in the ntfy JSON format.
@@ -89,6 +92,8 @@ public slots:
 
 signals:
     Q_SCRIPTABLE void MessageReceived(qlonglong subscriptionId, const QString &message);
+    Q_SCRIPTABLE void MessageRemoved(qlonglong subscriptionId, qlonglong messageId);
+    Q_SCRIPTABLE void MessagesCleared(qlonglong subscriptionId);
     Q_SCRIPTABLE void SubscriptionsChanged();
     Q_SCRIPTABLE void ServerStateChanged(qlonglong serverId, const QString &state);
     Q_SCRIPTABLE void ServerError(qlonglong serverId, const QString &error);

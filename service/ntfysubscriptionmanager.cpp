@@ -227,6 +227,26 @@ bool NtfySubscriptionManager::markRead(qint64 subscriptionId)
     return ok;
 }
 
+bool NtfySubscriptionManager::removeMessage(qint64 messageId)
+{
+    const NtfyStoredMessage message = m_database->message(messageId);
+    if (!message.isValid() || !m_database->removeMessage(messageId))
+        return false;
+    emit messageRemoved(message.subscriptionId, messageId);
+    // Unread counts and last messages.
+    emit subscriptionsChanged();
+    return true;
+}
+
+bool NtfySubscriptionManager::clearMessages(qint64 subscriptionId)
+{
+    if (!m_database->subscription(subscriptionId).isValid() || !m_database->clearMessages(subscriptionId))
+        return false;
+    emit messagesCleared(subscriptionId);
+    emit subscriptionsChanged();
+    return true;
+}
+
 NtfyStream::State NtfySubscriptionManager::serverState(qint64 serverId) const
 {
     NtfyStream *stream = m_streams.value(serverId);
