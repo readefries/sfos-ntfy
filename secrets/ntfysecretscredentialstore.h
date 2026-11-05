@@ -8,7 +8,7 @@
 
 #include <functional>
 
-namespace Sailfish { namespace Secrets { class SecretManager; } }
+namespace Sailfish { namespace Secrets { class Request; class SecretManager; } }
 
 // Credentials in a Sailfish Secrets collection that is:
 //  - encrypted at rest with a key derived from the device lock,
@@ -41,11 +41,25 @@ public:
     void unlock(const QString &key, const std::function<void(bool ok, const QString &error)> &done);
 
 private:
+    // Runs request to the end, keeping its error code in m_lastError.
+    bool run(Sailfish::Secrets::Request &request, QString *error);
+    // The connection to sailfish-secretsd is made once, by SecretManager, and doesn't survive
+    // the daemon restarting (on an update, say): every request after that fails. Runs attempt,
+    // and once more on a new connection if that's why it failed.
+    bool withConnection(const std::function<bool()> &attempt);
+    bool connectionLost(int errorCode) const;
+    void reconnect();
     bool ensureCollection(QString *error);
+    // remove() without withConnection(), for inside one.
+    bool removeSecret(const QString &key, QString *error);
 
     QScopedPointer<Sailfish::Secrets::SecretManager> m_manager;
     QString m_collectionName;
     bool m_collectionReady = false;
+    int m_lastError = 0;
+    bool m_unlocking = false;
+    // The connection turned out to be gone while unlock() still needed it.
+    bool m_reconnect = false;
 };
 
 #endif // NTFYSECRETSCREDENTIALSTORE_H
